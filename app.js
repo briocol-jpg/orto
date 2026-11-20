@@ -1,0 +1,1329 @@
+// =============================================================================
+// Il mio orto: calendario su misura, aiuole e diario.
+// Tutti i dati restano sul telefono (localStorage). Servizi esterni usati solo
+// con la posizione dell'orto: Open-Meteo (meteo, clima, altitudine),
+// BigDataCloud (nome del luogo), ISRIC SoilGrids (terreno).
+// =============================================================================
+"use strict";
+
+const CHIAVE = "ilmioorto.v1";
+const MESI = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
+const MESI_LUNGHI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio",
+  "agosto", "settembre", "ottobre", "novembre", "dicembre"];
+const GIORNI = ["dom", "lun", "mar", "mer", "gio", "ven", "sab"];
+const FASI = {
+  sem: { nome: "Semina in semenzaio", breve: "semenzaio", verbo: "Semina in semenzaio" },
+  dir: { nome: "Semina a terra", breve: "a terra", verbo: "Semina a terra" },
+  tra: { nome: "Trapianto", breve: "trapianto", verbo: "Trapianta" },
+  rac: { nome: "Raccolta", breve: "raccolta", verbo: "Raccogli" },
+};
+const MODI = { sem: "Semina in semenzaio", dir: "Semina a terra", tra: "Trapianto (piantine)" };
+const TIPI_EVENTO = {
+  raccolto: "🧺 Raccolto",
+  annaffiatura: "💧 Annaffiatura",
+  concimazione: "🟤 Concimazione",
+  trattamento: "🧴 Trattamento",
+  lavoro: "🛠️ Lavoro",
+  nota: "📝 Nota",
+};
+const SOGLIA_BRINATA = 2; // °C di minima dell'aria: sotto, a terra può brinare
+const ANNI_ROTAZIONE = 3;
+const ORIZZONTE = 21; // giorni guardati in "Oggi"
+
+const PER_ID = Object.fromEntries(ORTAGGI.map((o) => [o.id, o]));
+
+// -----------------------------------------------------------------------------
+// Errori visibili (utile senza console sul telefono)
+// -----------------------------------------------------------------------------
+function mostraErrore(testo) {
+  const box = document.getElementById("errori");
+  box.hidden = false;
+  box.textContent = "Errore: " + testo;
+}
+window.addEventListener("error", (e) => mostraErrore(e.message));
+window.addEventListener("unhandledrejection", (e) => mostraErrore(String(e.reason)));
+
+// -----------------------------------------------------------------------------
+// Stato
+// -----------------------------------------------------------------------------
+function statoVuoto() {
+  return {
+    versione: 1,
+    impostazioni: {
+      ultimaBrinata: BASE_ULTIMA_BRINATA,
+      primaBrinata: BASE_PRIMA_BRINATA,
+      lat: null, lon: null, altitudine: null, luogo: "",
+      preferiti: [],
+      soloPreferiti: false,
+    },
+    aiuole: [{ id: "semenzaio", nome: "Semenzaio", semenzaio: true, note: "" }],
+    impianti: [],
+    eventi: [],
+    clima: null,
+    terreno: null,
+    meteo: null,
+  };
+}
+
+function carica() {
+  try {
+    const testo = localStorage.getItem(CHIAVE);
+    if (testo) {
+      const s = JSON.parse(testo);
+      const vuoto = statoVuoto();
+      s.impostazioni = Object.assign(vuoto.impostazioni, s.impostazioni || {});
+      for (const k of ["aiuole", "impianti", "eventi"]) if (!Array.isArray(s[k])) s[k] = vuoto[k];
+      if (!s.aiuole.some((a) => a.semenzaio)) s.aiuole.unshift(vuoto.aiuole[0]);
+      return s;
+    }
+  } catch (e) {
+    console.warn(e);
+  }
+  return statoVuoto();
+}
+
+let S = carica();
+
+function salva() {
+  try {
+    localStorage.setItem(CHIAVE, JSON.stringify(S));
+  } catch (e) {
+    mostraErrore("non riesco a salvare i dati sul telefono (" + e.message + ")");
+  }
+}
+
+function nuovoId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+// -----------------------------------------------------------------------------
+// Date
+// -----------------------------------------------------------------------------
+function aISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function daISO(s) {
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(y, m - 1, d, 12);
+}
+function oggi() {
+  const d = new Date();
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12);
+}
+function piuGiorni(d, n) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n, 12);
+}
+function giorniTra(a, b) {
+  return Math.round((b - a) / 86400000);
+}
+function fmt(d) {
+  return `${d.getDate()} ${MESI[d.getMonth()]}`;
+}
+function fmtLungo(d) {
+  return `${GIORNI[d.getDay()]} ${d.getDate()} ${MESI_LUNGHI[d.getMonth()]} ${d.getFullYear()}`;
+}
+function fmtMmdd(mmdd) {
+  const [m, d] = mmdd.split("-").map(Number);
+  return `${d} ${MESI_LUNGHI[m - 1]}`;
+}
+function giornoAnno(mmdd) {
+  const [m, d] = mmdd.split("-").map(Number);
+  return giorniTra(new Date(2025, 0, 1, 12), new Date(2025, m - 1, d, 12));
+}
+function mmddDaGiorno(n) {
+  const d = piuGiorni(new Date(2025, 0, 1, 12), Math.round(n));
+  return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// Spostamento delle finestre in base alle brinate del luogo.
+function sposta(mmdd, anno) {
+  const [m, d] = mmdd.split("-").map(Number);
+  const delta = m <= 7
+    ? giornoAnno(S.impostazioni.ultimaBrinata) - giornoAnno(BASE_ULTIMA_BRINATA)
+    : giornoAnno(S.impostazioni.primaBrinata) - giornoAnno(BASE_PRIMA_BRINATA);
+  return new Date(anno, m - 1, d + delta, 12);
+}
+
+function finestreAnno(o, fase, anno) {
+  return (o[fase] || []).map(([a, b]) => {
+    const inizio = sposta(a, anno);
+    const fine = b < a ? sposta(b, anno + 1) : sposta(b, anno);
+    return { inizio, fine };
+  });
+}
+
+// Finestre che toccano l'intervallo [da, a].
+function finestreTra(o, fase, da, a) {
+  const out = [];
+  for (const anno of [da.getFullYear() - 1, da.getFullYear(), da.getFullYear() + 1]) {
+    for (const f of finestreAnno(o, fase, anno)) {
+      if (f.fine >= da && f.inizio <= a) out.push(f);
+    }
+  }
+  return out;
+}
+
+// -----------------------------------------------------------------------------
+// Utilità
+// -----------------------------------------------------------------------------
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function el(id) { return document.getElementById(id); }
+function nomeOrtaggio(id) {
+  const o = PER_ID[id];
+  return o ? `${o.emoji} ${o.nome}` : id;
+}
+function aiuola(id) { return S.aiuole.find((a) => a.id === id); }
+function preferito(id) { return S.impostazioni.preferiti.includes(id); }
+function elencoOrtaggi() {
+  const tutti = [...ORTAGGI].sort((a, b) => a.nome.localeCompare(b.nome, "it"));
+  return [...tutti.filter((o) => preferito(o.id)), ...tutti.filter((o) => !preferito(o.id))];
+}
+function amiciDi(id) {
+  return AMICI.filter((p) => p.includes(id)).map((p) => (p[0] === id ? p[1] : p[0]));
+}
+function nemiciDi(id) {
+  return NEMICI.filter((p) => p.includes(id)).map((p) => (p[0] === id ? p[1] : p[0]));
+}
+function linkGoogleCalendar(titolo, data, dettagli) {
+  const d1 = aISO(data).replaceAll("-", "");
+  const d2 = aISO(piuGiorni(data, 1)).replaceAll("-", "");
+  const q = new URLSearchParams({ action: "TEMPLATE", text: titolo, dates: `${d1}/${d2}`, details: dettagli || "" });
+  return "https://calendar.google.com/calendar/render?" + q.toString();
+}
+async function scaricaJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`il servizio ha risposto ${r.status}`);
+  return r.json();
+}
+function scaricaFile(nome, testo, tipo) {
+  const blob = new Blob([testo], { type: tipo });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = nome;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
+// -----------------------------------------------------------------------------
+// Impianti: stime e controlli
+// -----------------------------------------------------------------------------
+function impiantiAttivi(aiuolaId) {
+  return S.impianti.filter((i) => !i.finito && (aiuolaId === undefined || i.aiuolaId === aiuolaId));
+}
+
+// Prossimi passi previsti per un impianto attivo.
+function stimeImpianto(i) {
+  const o = PER_ID[i.ortaggioId];
+  const out = [];
+  if (!o) return out;
+  const data = daISO(i.data);
+  if (i.modo === "sem" && aiuola(i.aiuolaId)?.semenzaio) {
+    const trap = piuGiorni(data, (o.semTrap || 6) * 7);
+    out.push({ tipo: "tra", data: trap, testo: `Trapianto di ${o.nome}` });
+    if (o.gg) out.push({ tipo: "rac", data: piuGiorni(trap, o.gg), testo: `Prima raccolta di ${o.nome}` });
+  } else if (o.gg) {
+    out.push({ tipo: "rac", data: piuGiorni(data, o.gg), testo: `Prima raccolta di ${o.nome}` });
+  }
+  return out;
+}
+
+// Rotazione: stessa famiglia nella stessa aiuola negli ultimi anni.
+function avvisiRotazione(aiuolaId, ortaggioId, dataISO, escludiId) {
+  const o = PER_ID[ortaggioId];
+  if (!o || aiuola(aiuolaId)?.semenzaio) return [];
+  const data = daISO(dataISO);
+  const avvisi = [];
+  for (const i of S.impianti) {
+    if (i.id === escludiId || i.aiuolaId !== aiuolaId) continue;
+    const altro = PER_ID[i.ortaggioId];
+    if (!altro || altro.fam !== o.fam) continue;
+    const d = daISO(i.data);
+    const anni = data.getFullYear() - d.getFullYear();
+    if (anni >= 1 && anni < ANNI_ROTAZIONE) {
+      avvisi.push(`Nel ${d.getFullYear()} qui c'era ${altro.nome.toLowerCase()} (${FAMIGLIE[o.fam].toLowerCase()}): meglio aspettare ${ANNI_ROTAZIONE} anni prima di rimettere la stessa famiglia.`);
+    }
+  }
+  return [...new Set(avvisi)];
+}
+
+function avvisiVicini(aiuolaId, ortaggioId, escludiId) {
+  if (aiuola(aiuolaId)?.semenzaio) return { buoni: [], cattivi: [] };
+  const vicini = impiantiAttivi(aiuolaId).filter((i) => i.id !== escludiId).map((i) => i.ortaggioId);
+  const amici = amiciDi(ortaggioId), nemici = nemiciDi(ortaggioId);
+  return {
+    buoni: [...new Set(vicini.filter((v) => amici.includes(v)))],
+    cattivi: [...new Set(vicini.filter((v) => nemici.includes(v)))],
+  };
+}
+
+function htmlAvvisi(aiuolaId, ortaggioId, dataISO, escludiId) {
+  if (!aiuolaId || !ortaggioId || !dataISO) return "";
+  const o = PER_ID[ortaggioId];
+  let h = "";
+  for (const t of avvisiRotazione(aiuolaId, ortaggioId, dataISO, escludiId)) h += `<div class="avviso">🔄 ${esc(t)}</div>`;
+  const v = avvisiVicini(aiuolaId, ortaggioId, escludiId);
+  if (v.cattivi.length) h += `<div class="pericolo">⚠️ ${esc(o.nome)} non sta bene vicino a: ${v.cattivi.map((x) => esc(PER_ID[x].nome.toLowerCase())).join(", ")}.</div>`;
+  if (v.buoni.length) h += `<div class="bene">🤝 Buoni vicini: ${v.buoni.map((x) => esc(PER_ID[x].nome.toLowerCase())).join(", ")}.</div>`;
+  // Finestra di stagione
+  const d = daISO(dataISO);
+  const modo = aiuola(aiuolaId)?.semenzaio ? "sem" : null;
+  const fasiOk = modo ? ["sem"] : ["dir", "tra"];
+  const dentro = fasiOk.some((f) => finestreTra(o, f, d, d).length);
+  if (!dentro && fasiOk.some((f) => (o[f] || []).length)) {
+    h += `<div class="avviso">📅 Questa data è fuori dal periodo consigliato per ${esc(o.nome.toLowerCase())} (guarda il calendario).</div>`;
+  }
+  return h;
+}
+
+// -----------------------------------------------------------------------------
+// Finestra di dialogo con modulo
+// -----------------------------------------------------------------------------
+function apriFinestra(html, dopo) {
+  const f = el("finestra");
+  f.innerHTML = `<div class="contenuto">${html}</div>`;
+  f.querySelectorAll("[data-chiudi]").forEach((b) => b.addEventListener("click", () => f.close()));
+  if (dopo) dopo(f);
+  if (!f.open) f.showModal();
+  return f;
+}
+function chiudiFinestra() {
+  const f = el("finestra");
+  if (f.open) f.close();
+}
+
+// campi: [{id, etichetta, tipo, valore, opzioni:[[valore, testo]], richiesto, passo}]
+function modulo({ titolo, campi, testoSalva = "Salva", salva, aggiorna, extra = "" }) {
+  const htmlCampi = campi.map((c) => {
+    const req = c.richiesto ? "required" : "";
+    const val = c.valore ?? "";
+    if (c.tipo === "select") {
+      return `<label for="m_${c.id}">${esc(c.etichetta)}</label><select id="m_${c.id}" name="${c.id}" ${req}>
+        ${c.opzioni.map(([v, t]) => `<option value="${esc(v)}" ${String(v) === String(val) ? "selected" : ""}>${esc(t)}</option>`).join("")}
+      </select>`;
+    }
+    if (c.tipo === "textarea") {
+      return `<label for="m_${c.id}">${esc(c.etichetta)}</label><textarea id="m_${c.id}" name="${c.id}" ${req}>${esc(val)}</textarea>`;
+    }
+    if (c.tipo === "check") {
+      return `<div class="campo-check"><input type="checkbox" id="m_${c.id}" name="${c.id}" ${val ? "checked" : ""}><label for="m_${c.id}" style="margin:0">${esc(c.etichetta)}</label></div>`;
+    }
+    const passo = c.passo ? `step="${c.passo}"` : "";
+    return `<label for="m_${c.id}">${esc(c.etichetta)}</label><input id="m_${c.id}" name="${c.id}" type="${c.tipo || "text"}" value="${esc(val)}" ${passo} ${req}>`;
+  }).join("");
+
+  apriFinestra(`
+    <h2>${esc(titolo)}</h2>
+    <form id="modulo" novalidate>
+      ${htmlCampi}
+      <div id="m_avvisi"></div>
+      ${extra}
+      <div class="riga-bottoni">
+        <button type="submit">${esc(testoSalva)}</button>
+        <button type="button" class="secondario" data-chiudi>Annulla</button>
+      </div>
+    </form>`, (f) => {
+    const form = f.querySelector("#modulo");
+    const valori = () => {
+      const v = {};
+      for (const c of campi) {
+        const e = form.elements[c.id];
+        v[c.id] = c.tipo === "check" ? e.checked : e.value.trim();
+      }
+      return v;
+    };
+    const ricalcola = () => { if (aggiorna) f.querySelector("#m_avvisi").innerHTML = aggiorna(valori(), form) || ""; };
+    form.addEventListener("input", ricalcola);
+    form.addEventListener("change", ricalcola);
+    ricalcola();
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const v = valori();
+      const manca = campi.find((c) => c.richiesto && !v[c.id]);
+      if (manca) {
+        f.querySelector("#m_avvisi").innerHTML = `<div class="pericolo">Manca: ${esc(manca.etichetta)}</div>`;
+        return;
+      }
+      if (salva(v) !== false) {
+        salva_e_ridisegna();
+        chiudiFinestra();
+      }
+    });
+  });
+}
+
+function salva_e_ridisegna() {
+  salva();
+  disegna();
+}
+
+// -----------------------------------------------------------------------------
+// Moduli: aiuole, colture, eventi
+// -----------------------------------------------------------------------------
+function opzioniOrtaggi() {
+  return [["", "— scegli —"], ...elencoOrtaggi().map((o) => [o.id, `${preferito(o.id) ? "★ " : ""}${o.emoji} ${o.nome}`])];
+}
+function opzioniAiuole(conSemenzaio = true) {
+  return S.aiuole.filter((a) => conSemenzaio || !a.semenzaio).map((a) => [a.id, a.nome]);
+}
+
+function moduloAiuola(a) {
+  modulo({
+    titolo: a ? "Modifica aiuola" : "Nuova aiuola",
+    campi: [
+      { id: "nome", etichetta: "Nome (es. Aiuola 1, Lungo il muro)", valore: a?.nome, richiesto: true },
+      { id: "misure", etichetta: "Misure (facoltativo, es. 1,2 × 4 m)", valore: a?.misure },
+      { id: "note", etichetta: "Note (esposizione, terreno…)", tipo: "textarea", valore: a?.note },
+    ],
+    salva: (v) => {
+      if (a) Object.assign(a, v);
+      else S.aiuole.push({ id: nuovoId(), ...v });
+    },
+  });
+}
+
+// Modo più probabile per un ortaggio: a terra se si può, altrimenti trapianto.
+function modoPredefinito(ortaggioId, aiuolaId) {
+  if (aiuola(aiuolaId)?.semenzaio) return "sem";
+  const o = PER_ID[ortaggioId];
+  return o && !o.dir.length && o.tra.length ? "tra" : "dir";
+}
+
+function moduloImpianto({ aiuolaId, ortaggioId, impianto } = {}) {
+  const i = impianto;
+  let ultimoOrtaggio = i?.ortaggioId ?? ortaggioId ?? "";
+  const aiuolaIniziale = i?.aiuolaId ?? aiuolaId ?? S.aiuole[0].id;
+  modulo({
+    titolo: i ? "Modifica coltura" : "Nuova coltura",
+    campi: [
+      { id: "ortaggioId", etichetta: "Ortaggio", tipo: "select", opzioni: opzioniOrtaggi(), valore: i?.ortaggioId ?? ortaggioId ?? "", richiesto: true },
+      { id: "aiuolaId", etichetta: "Dove", tipo: "select", opzioni: opzioniAiuole(), valore: aiuolaIniziale, richiesto: true },
+      { id: "modo", etichetta: "Come", tipo: "select", opzioni: Object.entries(MODI), valore: i?.modo ?? modoPredefinito(ultimoOrtaggio, aiuolaIniziale) },
+      { id: "data", etichetta: "Data", tipo: "date", valore: i?.data ?? aISO(oggi()), richiesto: true },
+      { id: "varieta", etichetta: "Varietà (facoltativo)", valore: i?.varieta },
+      { id: "quantita", etichetta: "Quante piante / file (facoltativo)", valore: i?.quantita },
+      { id: "note", etichetta: "Note", tipo: "textarea", valore: i?.note },
+    ],
+    aggiorna: (v, form) => {
+      if (aiuola(v.aiuolaId)?.semenzaio && v.modo !== "sem") form.elements.modo.value = "sem";
+      if (v.ortaggioId !== ultimoOrtaggio) {
+        ultimoOrtaggio = v.ortaggioId;
+        form.elements.modo.value = modoPredefinito(v.ortaggioId, v.aiuolaId);
+      }
+      return htmlAvvisi(v.aiuolaId, v.ortaggioId, v.data, i?.id);
+    },
+    salva: (v) => {
+      if (aiuola(v.aiuolaId)?.semenzaio) v.modo = "sem";
+      if (i) Object.assign(i, v);
+      else S.impianti.push({ id: nuovoId(), finito: false, ...v });
+    },
+  });
+}
+
+function moduloTrapianto(i) {
+  const o = PER_ID[i.ortaggioId];
+  modulo({
+    titolo: `Trapianta ${o.nome.toLowerCase()}`,
+    campi: [
+      { id: "aiuolaId", etichetta: "In quale aiuola", tipo: "select", opzioni: opzioniAiuole(false), richiesto: true },
+      { id: "data", etichetta: "Data del trapianto", tipo: "date", valore: aISO(oggi()), richiesto: true },
+      { id: "quantita", etichetta: "Quante piantine", valore: i.quantita },
+    ],
+    testoSalva: "Trapianta",
+    aggiorna: (v) => htmlAvvisi(v.aiuolaId, i.ortaggioId, v.data, null)
+      + (S.aiuole.filter((a) => !a.semenzaio).length ? "" : `<div class="avviso">Crea prima un'aiuola nella scheda Orto.</div>`),
+    salva: (v) => {
+      if (!v.aiuolaId) return false;
+      i.finito = true;
+      i.dataFine = v.data;
+      i.esito = "trapiantato";
+      S.impianti.push({
+        id: nuovoId(), finito: false, ortaggioId: i.ortaggioId, aiuolaId: v.aiuolaId, modo: "tra",
+        data: v.data, varieta: i.varieta, quantita: v.quantita, note: "", daSemenzaio: i.id,
+      });
+    },
+  });
+}
+
+function moduloEvento({ tipo = "raccolto", aiuolaId, impiantoId, evento } = {}) {
+  const ev = evento;
+  const attivi = S.impianti.filter((x) => !x.finito || x.id === (ev?.impiantoId ?? impiantoId));
+  modulo({
+    titolo: ev ? "Modifica annotazione" : "Nuova annotazione",
+    campi: [
+      { id: "tipo", etichetta: "Che cosa", tipo: "select", opzioni: Object.entries(TIPI_EVENTO), valore: ev?.tipo ?? tipo },
+      { id: "data", etichetta: "Data", tipo: "date", valore: ev?.data ?? aISO(oggi()), richiesto: true },
+      { id: "aiuolaId", etichetta: "Aiuola (facoltativo)", tipo: "select", opzioni: [["", "— tutto l'orto —"], ...opzioniAiuole()], valore: ev?.aiuolaId ?? aiuolaId ?? "" },
+      { id: "impiantoId", etichetta: "Coltura (facoltativo)", tipo: "select",
+        opzioni: [["", "—"], ...attivi.map((x) => [x.id, `${nomeOrtaggio(x.ortaggioId)} — ${aiuola(x.aiuolaId)?.nome ?? ""}`])],
+        valore: ev?.impiantoId ?? impiantoId ?? "" },
+      { id: "kg", etichetta: "Quantità raccolta in kg (solo raccolto)", tipo: "number", passo: "0.1", valore: ev?.kg },
+      { id: "testo", etichetta: "Descrizione (es. prodotto usato, osservazioni)", tipo: "textarea", valore: ev?.testo },
+    ],
+    salva: (v) => {
+      if (v.impiantoId && !v.aiuolaId) v.aiuolaId = S.impianti.find((x) => x.id === v.impiantoId)?.aiuolaId ?? "";
+      v.kg = v.kg ? Number(v.kg.replace(",", ".")) : null;
+      if (ev) Object.assign(ev, v);
+      else S.eventi.push({ id: nuovoId(), ...v });
+    },
+  });
+}
+
+function chiudiImpianto(i) {
+  modulo({
+    titolo: `Fine coltura: ${PER_ID[i.ortaggioId]?.nome ?? ""}`,
+    campi: [
+      { id: "dataFine", etichetta: "Data di fine", tipo: "date", valore: aISO(oggi()), richiesto: true },
+      { id: "esito", etichetta: "Com'è andata", tipo: "select", opzioni: [["raccolto", "Raccolta finita"], ["fallito", "Non è venuta / malattia"], ["altro", "Altro"]] },
+      { id: "commento", etichetta: "Commento per l'anno prossimo", tipo: "textarea", valore: i.commento },
+    ],
+    testoSalva: "Chiudi coltura",
+    salva: (v) => { Object.assign(i, v, { finito: true }); },
+  });
+}
+
+// -----------------------------------------------------------------------------
+// Scheda ortaggio
+// -----------------------------------------------------------------------------
+function schedaOrtaggio(id) {
+  const o = PER_ID[id];
+  const anno = oggi().getFullYear();
+  const righeFasi = Object.keys(FASI).map((f) => {
+    const fin = finestreAnno(o, f, anno);
+    if (!fin.length) return "";
+    return `<tr><th>${FASI[f].nome}</th><td>${fin.map((x) => `${fmt(x.inizio)} – ${fmt(x.fine)}`).join("<br>")}</td></tr>`;
+  }).join("");
+  const amici = amiciDi(id).map((x) => PER_ID[x].nome.toLowerCase());
+  const nemici = nemiciDi(id).map((x) => PER_ID[x].nome.toLowerCase());
+  apriFinestra(`
+    <div class="riga" style="display:flex;justify-content:space-between;align-items:center">
+      <h2>${o.emoji} ${esc(o.nome)}</h2>
+      <button class="stella" id="stella" aria-label="Preferito">${preferito(id) ? "★" : "☆"}</button>
+    </div>
+    <p class="tenue">${esc(FAMIGLIE[o.fam])} · ${esc(ESIGENZE[o.esig])}</p>
+    <table>${righeFasi}
+      ${o.gg ? `<tr><th>Alla raccolta</th><td>circa ${o.gg} giorni dalla semina a terra o dal trapianto</td></tr>` : ""}
+      ${o.semTrap ? `<tr><th>In semenzaio</th><td>circa ${o.semTrap} settimane prima del trapianto</td></tr>` : ""}
+      <tr><th>Distanze</th><td>${esc(o.dist)}</td></tr>
+    </table>
+    <p>${esc(o.note)}</p>
+    ${amici.length ? `<p><b>Buoni vicini:</b> ${esc(amici.join(", "))}</p>` : ""}
+    ${nemici.length ? `<p><b>Da tenere lontano:</b> ${esc(nemici.join(", "))}</p>` : ""}
+    <p class="tenue piccolo">Date calcolate per il tuo luogo (ultima brinata ${fmtMmdd(S.impostazioni.ultimaBrinata)}, prima brinata ${fmtMmdd(S.impostazioni.primaBrinata)}).</p>
+    <div class="riga-bottoni">
+      <button id="aggiungi">＋ Aggiungi all'orto</button>
+      <button class="secondario" data-chiudi>Chiudi</button>
+    </div>`, (f) => {
+    f.querySelector("#stella").addEventListener("click", (e) => {
+      const p = S.impostazioni.preferiti;
+      if (preferito(id)) p.splice(p.indexOf(id), 1); else p.push(id);
+      e.target.textContent = preferito(id) ? "★" : "☆";
+      salva_e_ridisegna();
+    });
+    f.querySelector("#aggiungi").addEventListener("click", () => {
+      const ora = oggi();
+      const inSem = finestreTra(o, "sem", ora, ora).length && !finestreTra(o, "dir", ora, ora).length && !finestreTra(o, "tra", ora, ora).length;
+      moduloImpianto({ ortaggioId: id, aiuolaId: inSem ? "semenzaio" : undefined });
+    });
+  });
+}
+
+// -----------------------------------------------------------------------------
+// Meteo
+// -----------------------------------------------------------------------------
+const ICONE_METEO = (c) => (c === 0 ? "☀️" : c <= 2 ? "🌤️" : c === 3 ? "☁️" : c <= 48 ? "🌫️" : c <= 57 ? "🌦️"
+  : c <= 67 ? "🌧️" : c <= 77 ? "🌨️" : c <= 82 ? "🌧️" : c <= 86 ? "🌨️" : "⛈️");
+
+async function aggiornaMeteo(forza = false) {
+  const { lat, lon, altitudine } = S.impostazioni;
+  if (lat == null) return null;
+  const m = S.meteo;
+  if (!forza && m && m.lat === lat && m.lon === lon && Date.now() - m.quando < 2 * 3600 * 1000) return m;
+  const q = new URLSearchParams({
+    latitude: lat, longitude: lon, timezone: "Europe/Rome", forecast_days: "7",
+    daily: "weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max",
+  });
+  if (altitudine != null) q.set("elevation", altitudine);
+  const dati = await scaricaJSON("https://api.open-meteo.com/v1/forecast?" + q);
+  S.meteo = { quando: Date.now(), lat, lon, giorni: dati.daily };
+  salva();
+  return S.meteo;
+}
+
+function htmlMeteo(m) {
+  const g = m.giorni;
+  let celle = "";
+  const avvisi = [];
+  let pioggia = 0;
+  g.time.forEach((t, k) => {
+    const d = daISO(t);
+    const min = g.temperature_2m_min[k], max = g.temperature_2m_max[k];
+    const mm = g.precipitation_sum[k] ?? 0;
+    pioggia += mm;
+    const freddo = min <= SOGLIA_BRINATA;
+    if (freddo) avvisi.push(`<div class="pericolo">🥶 ${k === 0 ? "Oggi" : GIORNI[d.getDay()] + " " + d.getDate()}: minima ${Math.round(min)} °C, rischio brinata. Copri le piantine con il tessuto non tessuto.</div>`);
+    if (max >= 32) avvisi.push(`<div class="avviso">🔥 ${GIORNI[d.getDay()]} ${d.getDate()}: massima ${Math.round(max)} °C. Annaffia la sera e ombreggia le insalate.</div>`);
+    celle += `<div class="giorno ${freddo ? "freddo" : ""}">
+      <div>${k === 0 ? "oggi" : GIORNI[d.getDay()]}</div>
+      <div class="icona">${ICONE_METEO(g.weathercode[k])}</div>
+      <div class="max">${Math.round(max)}°</div>
+      <div class="min ${freddo ? "freddo" : ""}">${Math.round(min)}°</div>
+      <div class="tenue">${mm >= 0.5 ? Math.round(mm) + " mm" : ""}</div>
+    </div>`;
+  });
+  const primi3 = g.precipitation_sum.slice(0, 3).reduce((a, b) => a + (b ?? 0), 0);
+  if (primi3 >= 10) avvisi.push(`<div class="bene">🌧️ Nei prossimi 3 giorni sono previsti ${Math.round(primi3)} mm di pioggia: puoi saltare le annaffiature.</div>`);
+  else if (pioggia < 3 && g.temperature_2m_max.slice(0, 3).some((x) => x >= 22)) avvisi.push(`<div class="avviso">💧 Settimana asciutta: ricordati di annaffiare.</div>`);
+  const agg = new Date(m.quando);
+  return `<div class="meteo">${celle}</div>${avvisi.join("")}
+    <p class="tenue piccolo">Previsioni Open-Meteo, aggiornate alle ${agg.getHours()}:${String(agg.getMinutes()).padStart(2, "0")}.</p>`;
+}
+
+// -----------------------------------------------------------------------------
+// Vista: Oggi
+// -----------------------------------------------------------------------------
+function vistaOggi() {
+  const ora = oggi();
+  const fino = piuGiorni(ora, ORIZZONTE);
+  const imp = S.impostazioni;
+  const lista = imp.soloPreferiti && imp.preferiti.length
+    ? elencoOrtaggi().filter((o) => preferito(o.id)) : elencoOrtaggi();
+
+  const blocchi = ["sem", "dir", "tra"].map((f) => {
+    const voci = [];
+    for (const o of lista) {
+      const fin = finestreTra(o, f, ora, fino);
+      if (!fin.length) continue;
+      const w = fin[0];
+      const quando = w.inizio > ora ? `dal ${fmt(w.inizio)}` : `fino al ${fmt(w.fine)}`;
+      voci.push(`<button class="chip" data-ortaggio="${o.id}">${preferito(o.id) ? "★ " : ""}${o.emoji} ${esc(o.nome)} <span class="tenue">${quando}</span></button>`);
+    }
+    if (!voci.length) return "";
+    return `<h3>${FASI[f].nome}</h3><div>${voci.join("")}</div>`;
+  }).join("");
+
+  // Prossimi passi delle colture dell'orto
+  const passi = [];
+  for (const i of impiantiAttivi()) {
+    for (const s of stimeImpianto(i)) {
+      const dd = giorniTra(ora, s.data);
+      if (dd >= -10 && dd <= ORIZZONTE) passi.push({ i, s, dd });
+    }
+  }
+  passi.sort((a, b) => a.s.data - b.s.data);
+  const htmlPassi = passi.length ? `<ul class="elenco">${passi.map(({ i, s, dd }) => `
+    <li><div class="riga">
+      <span>${PER_ID[i.ortaggioId].emoji} <b>${esc(s.testo)}</b> <span class="tenue">· ${esc(aiuola(i.aiuolaId)?.nome ?? "")}</span><br>
+      <span class="tenue piccolo">${dd < 0 ? `previsto ${-dd} giorni fa` : dd === 0 ? "previsto oggi" : `verso il ${fmt(s.data)}`} (stima)</span></span>
+      <span>
+        ${s.tipo === "tra" ? `<button class="piccolo" data-trapianta="${i.id}">Trapianta</button>` : `<button class="piccolo" data-raccolto="${i.id}">Raccolto</button>`}
+        <a class="bottone secondario piccolo" style="min-height:34px;padding:4px 10px" target="_blank" rel="noopener" href="${esc(linkGoogleCalendar(s.testo, s.data, "Dal diario dell'orto"))}" title="Aggiungi al calendario">📅</a>
+      </span>
+    </div></li>`).join("")}</ul>` : `<p class="tenue">Nessun trapianto o raccolta previsti nelle prossime 3 settimane. Le colture si aggiungono nella scheda Orto.</p>`;
+
+  const meteo = imp.lat == null
+    ? `<p class="tenue">Imposta la posizione dell'orto nella scheda <a href="#luogo">Luogo</a> per vedere le previsioni e il rischio di brinate.</p>`
+    : `<div id="box-meteo"><p class="tenue">Carico le previsioni…</p></div>`;
+
+  return `
+    <section class="carta">
+      <h2 style="margin-top:0">${MESI_LUNGHI[ora.getMonth()][0].toUpperCase() + MESI_LUNGHI[ora.getMonth()].slice(1)}: lavori del mese</h2>
+      <p style="margin:0">${esc(LAVORI_MESE[ora.getMonth()])}</p>
+    </section>
+    <section class="carta"><h2 style="margin-top:0">Meteo dei prossimi 7 giorni</h2>${meteo}</section>
+    <section class="carta">
+      <h2 style="margin-top:0">Dal tuo orto</h2>${htmlPassi}
+    </section>
+    <section class="carta">
+      <h2 style="margin-top:0">Si può fare nelle prossime 3 settimane</h2>
+      ${imp.preferiti.length ? `<div class="campo-check"><input type="checkbox" id="solo-pref" ${imp.soloPreferiti ? "checked" : ""}><label for="solo-pref" style="margin:0">Solo i miei ortaggi (★)</label></div>`
+        : `<p class="tenue piccolo">Tocca un ortaggio e premi ☆ per segnarlo tra i tuoi: potrai vedere solo quelli.</p>`}
+      ${blocchi || `<p class="tenue">Niente da seminare o trapiantare in questo periodo.</p>`}
+    </section>`;
+}
+
+function dopoOggi() {
+  const box = el("box-meteo");
+  if (box) {
+    if (S.meteo && S.meteo.lat === S.impostazioni.lat) box.innerHTML = htmlMeteo(S.meteo);
+    aggiornaMeteo().then((m) => { if (m && el("box-meteo")) el("box-meteo").innerHTML = htmlMeteo(m); })
+      .catch((e) => {
+        if (el("box-meteo") && !S.meteo) el("box-meteo").innerHTML = `<p class="avviso">Previsioni non disponibili (${esc(e.message)}). Serve la connessione.</p>`;
+      });
+  }
+  el("solo-pref")?.addEventListener("change", (e) => {
+    S.impostazioni.soloPreferiti = e.target.checked;
+    salva_e_ridisegna();
+  });
+}
+
+// -----------------------------------------------------------------------------
+// Vista: Calendario
+// -----------------------------------------------------------------------------
+function vistaCalendario() {
+  const ora = oggi();
+  const anno = ora.getFullYear();
+  const inizioAnno = new Date(anno, 0, 1, 12);
+  const durata = giorniTra(inizioAnno, new Date(anno + 1, 0, 1, 12));
+  const pos = (d) => Math.min(100, Math.max(0, (giorniTra(inizioAnno, d) / durata) * 100));
+
+  const righe = elencoOrtaggi().map((o) => {
+    let barre = "";
+    for (const f of Object.keys(FASI)) {
+      // Le finestre dell'anno e quelle dell'anno prima che scavalcano a gennaio.
+      for (const w of [...finestreAnno(o, f, anno - 1), ...finestreAnno(o, f, anno)]) {
+        if (w.fine < inizioAnno || w.inizio.getFullYear() > anno) continue;
+        const a = pos(w.inizio < inizioAnno ? inizioAnno : w.inizio);
+        const b = pos(w.fine);
+        barre += `<div class="b ${f}" style="left:${a}%;width:${Math.max(0.8, b - a)}%"></div>`;
+      }
+    }
+    return `<div class="cal-riga" data-ortaggio="${o.id}">
+      <div class="nome">${preferito(o.id) ? "★ " : ""}${o.emoji} ${esc(o.nome)}</div>
+      <div class="cal-barre">${barre}<div class="oggi" style="left:${pos(ora)}%"></div></div>
+    </div>`;
+  }).join("");
+
+  return `
+    <h2>Calendario ${anno}</h2>
+    <p class="tenue piccolo">Calcolato per il tuo luogo: ultima brinata ${fmtMmdd(S.impostazioni.ultimaBrinata)}, prima brinata ${fmtMmdd(S.impostazioni.primaBrinata)}. Tocca un ortaggio per la scheda.</p>
+    <div class="legenda">
+      <span><i style="background:var(--f-sem)"></i>Semenzaio</span>
+      <span><i style="background:var(--f-dir)"></i>Semina a terra</span>
+      <span><i style="background:var(--f-tra)"></i>Trapianto</span>
+      <span><i style="background:var(--f-rac)"></i>Raccolta</span>
+    </div>
+    <div class="cal">
+      <div class="cal-mesi"><div></div><div class="mesi">${MESI.map((m) => `<span>${m[0].toUpperCase()}</span>`).join("")}</div></div>
+      ${righe}
+    </div>`;
+}
+
+// -----------------------------------------------------------------------------
+// Vista: Orto (aiuole)
+// -----------------------------------------------------------------------------
+function vistaOrto(idAiuola) {
+  if (idAiuola && aiuola(idAiuola)) return vistaAiuola(aiuola(idAiuola));
+  const carte = S.aiuole.map((a) => {
+    const attivi = impiantiAttivi(a.id);
+    const problemi = attivi.reduce((n, i) => n + avvisiRotazione(a.id, i.ortaggioId, i.data, i.id).length
+      + avvisiVicini(a.id, i.ortaggioId, i.id).cattivi.length, 0);
+    return `<a class="carta" href="#orto/${a.id}" style="display:block;color:inherit;text-decoration:none">
+      <div class="riga" style="display:flex;justify-content:space-between"><b>${a.semenzaio ? "🪴" : "🟫"} ${esc(a.nome)}</b>
+      <span class="tenue">${a.misure ? esc(a.misure) : ""}</span></div>
+      <div>${attivi.length ? attivi.map((i) => `<span class="chip">${nomeOrtaggio(i.ortaggioId)}</span>`).join("") : `<span class="tenue">vuota</span>`}</div>
+      ${problemi ? `<div class="avviso piccolo">⚠️ ${problemi} ${problemi === 1 ? "avviso" : "avvisi"} su rotazione o vicini</div>` : ""}
+    </a>`;
+  }).join("");
+  return `
+    <h2>Le mie aiuole</h2>
+    ${S.aiuole.length <= 1 ? `<p class="tenue">Crea un'aiuola per ogni pezzo dell'orto: l'app ricorda cosa ci hai coltivato ogni anno e ti avvisa se ripeti la stessa famiglia (rotazione) o metti vicini ortaggi che non vanno d'accordo.</p>` : ""}
+    ${carte}
+    <div class="riga-bottoni">
+      <button id="nuova-aiuola">＋ Nuova aiuola</button>
+      <button class="secondario" id="nuova-coltura">＋ Nuova coltura</button>
+    </div>`;
+}
+
+function suggerimentiAiuola(a) {
+  if (a.semenzaio) return "";
+  const ora = oggi();
+  const fino = piuGiorni(ora, ORIZZONTE);
+  const dataISO = aISO(ora);
+  const cand = [];
+  for (const o of ORTAGGI) {
+    if (!["dir", "tra"].some((f) => finestreTra(o, f, ora, fino).length)) continue;
+    if (impiantiAttivi(a.id).some((i) => i.ortaggioId === o.id)) continue;
+    const rot = avvisiRotazione(a.id, o.id, dataISO).length;
+    const v = avvisiVicini(a.id, o.id);
+    if (rot || v.cattivi.length) continue;
+    cand.push({ o, punti: v.buoni.length * 2 + (preferito(o.id) ? 1 : 0) });
+  }
+  if (!cand.length) return "";
+  cand.sort((x, y) => y.punti - x.punti || x.o.nome.localeCompare(y.o.nome, "it"));
+  return `<section class="carta"><h3 style="margin-top:0">Cosa potresti mettere qui adesso</h3>
+    <p class="tenue piccolo">Ortaggi di stagione che rispettano la rotazione e vanno d'accordo con quelli già presenti.</p>
+    ${cand.slice(0, 10).map(({ o }) => `<button class="chip" data-ortaggio="${o.id}">${o.emoji} ${esc(o.nome)}</button>`).join("")}
+  </section>`;
+}
+
+function vistaAiuola(a) {
+  const attivi = impiantiAttivi(a.id).sort((x, y) => x.data.localeCompare(y.data));
+  const storici = S.impianti.filter((i) => i.finito && i.aiuolaId === a.id).sort((x, y) => y.data.localeCompare(x.data));
+  const eventi = S.eventi.filter((e) => e.aiuolaId === a.id).sort((x, y) => y.data.localeCompare(x.data)).slice(0, 15);
+
+  const htmlAttivi = attivi.length ? `<ul class="elenco">${attivi.map((i) => {
+    const o = PER_ID[i.ortaggioId];
+    const stime = stimeImpianto(i).map((s) => `${FASI[s.tipo].breve} ~${fmt(s.data)}`).join(" · ");
+    const avv = htmlAvvisi(a.id, i.ortaggioId, i.data, i.id).replace(/<div class="avviso">📅[^<]*<\/div>/, "");
+    return `<li>
+      <div><b>${o.emoji} ${esc(o.nome)}</b>${i.varieta ? ` <span class="tenue">${esc(i.varieta)}</span>` : ""}</div>
+      <div class="tenue piccolo">${esc(MODI[i.modo] ?? "")} il ${fmt(daISO(i.data))}${i.quantita ? " · " + esc(i.quantita) : ""}${stime ? " · previsti: " + stime : ""}</div>
+      ${i.note ? `<div class="piccolo">${esc(i.note)}</div>` : ""}
+      ${avv}
+      <div class="riga-bottoni">
+        ${a.semenzaio ? `<button class="piccolo" data-trapianta="${i.id}">Trapianta</button>` : `<button class="piccolo" data-raccolto="${i.id}">🧺 Raccolto</button>`}
+        <button class="piccolo secondario" data-evento-imp="${i.id}">＋ Nota</button>
+        <button class="piccolo secondario" data-modifica-imp="${i.id}">Modifica</button>
+        <button class="piccolo secondario" data-fine="${i.id}">Fine coltura</button>
+      </div>
+    </li>`;
+  }).join("")}</ul>` : `<p class="tenue">Niente in coltivazione.</p>`;
+
+  const perAnno = {};
+  for (const i of storici) (perAnno[i.data.slice(0, 4)] ??= []).push(i);
+  const htmlStorici = Object.keys(perAnno).length ? Object.entries(perAnno).sort((x, y) => y[0].localeCompare(x[0])).map(([anno, l]) =>
+    `<p><b>${anno}:</b> ${l.map((i) => `${nomeOrtaggio(i.ortaggioId)}${i.esito === "fallito" ? " ✗" : ""}${i.commento ? ` <span class="tenue">(${esc(i.commento)})</span>` : ""}`).join(", ")}</p>`).join("")
+    : `<p class="tenue">Ancora niente: qui comparirà cosa hai coltivato negli anni passati.</p>`;
+
+  return `
+    <p><a href="#orto">← Tutte le aiuole</a></p>
+    <h2>${a.semenzaio ? "🪴" : "🟫"} ${esc(a.nome)}</h2>
+    ${a.misure ? `<p class="tenue">${esc(a.misure)}</p>` : ""}
+    ${a.note ? `<p>${esc(a.note)}</p>` : ""}
+    ${a.semenzaio ? `<p class="tenue piccolo">Qui segni le semine al riparo (in casa, in serra, in vasetti). Quando le piantine sono pronte premi «Trapianta» e scegli l'aiuola.</p>` : ""}
+    <section class="carta"><h3 style="margin-top:0">In coltivazione</h3>${htmlAttivi}
+      <div class="riga-bottoni"><button id="coltura-qui">＋ ${a.semenzaio ? "Nuova semina" : "Nuova coltura"}</button>
+      <button class="secondario" id="evento-qui">＋ Annotazione</button></div>
+    </section>
+    ${suggerimentiAiuola(a)}
+    ${a.semenzaio ? "" : `<section class="carta"><h3 style="margin-top:0">Negli anni passati</h3>${htmlStorici}</section>`}
+    ${eventi.length ? `<section class="carta"><h3 style="margin-top:0">Ultime annotazioni</h3>${htmlEventi(eventi)}</section>` : ""}
+    <div class="riga-bottoni">
+      <button class="secondario" id="modifica-aiuola">Modifica aiuola</button>
+      ${a.semenzaio ? "" : `<button class="secondario" id="elimina-aiuola">Elimina aiuola</button>`}
+    </div>`;
+}
+
+function htmlEventi(eventi) {
+  return `<ul class="elenco">${eventi.map((e) => {
+    const imp = S.impianti.find((i) => i.id === e.impiantoId);
+    return `<li><div class="riga"><span><b>${TIPI_EVENTO[e.tipo] ?? e.tipo}</b>
+      ${imp ? ` · ${nomeOrtaggio(imp.ortaggioId)}` : ""}${e.kg ? ` · <b>${String(e.kg).replace(".", ",")} kg</b>` : ""}
+      <br><span class="tenue piccolo">${fmt(daISO(e.data))} ${e.data.slice(0, 4)}${e.aiuolaId && aiuola(e.aiuolaId) ? " · " + esc(aiuola(e.aiuolaId).nome) : ""}</span>
+      ${e.testo ? `<br><span class="piccolo">${esc(e.testo)}</span>` : ""}</span>
+      <button class="piccolo secondario" data-modifica-ev="${e.id}">Modifica</button></div></li>`;
+  }).join("")}</ul>`;
+}
+
+// -----------------------------------------------------------------------------
+// Vista: Diario
+// -----------------------------------------------------------------------------
+let annoDiario = null;
+function vistaDiario() {
+  const anni = new Set([String(oggi().getFullYear())]);
+  for (const x of [...S.eventi, ...S.impianti]) anni.add(x.data.slice(0, 4));
+  const elencoAnni = [...anni].sort().reverse();
+  const anno = annoDiario && anni.has(annoDiario) ? annoDiario : elencoAnni[0];
+
+  const eventi = S.eventi.filter((e) => e.data.startsWith(anno));
+  const kg = {};
+  for (const e of eventi) {
+    if (e.tipo !== "raccolto" || !e.kg) continue;
+    const imp = S.impianti.find((i) => i.id === e.impiantoId);
+    const chiave = imp ? imp.ortaggioId : "altro";
+    kg[chiave] = (kg[chiave] ?? 0) + e.kg;
+  }
+  const totale = Object.values(kg).reduce((a, b) => a + b, 0);
+  const tabKg = totale ? `<table>${Object.entries(kg).sort((a, b) => b[1] - a[1]).map(([id, v]) =>
+    `<tr><td>${id === "altro" ? "Altro" : nomeOrtaggio(id)}</td><td class="num">${v.toFixed(1).replace(".", ",")} kg</td></tr>`).join("")}
+    <tr><th>Totale</th><th class="num">${totale.toFixed(1).replace(".", ",")} kg</th></tr></table>`
+    : `<p class="tenue">Nessun raccolto pesato. Quando raccogli, segna i kg: a fine anno vedrai cosa ha reso di più.</p>`;
+
+  // Semine e trapianti dell'anno, con gli eventi, in ordine di data
+  const voci = [
+    ...S.impianti.filter((i) => i.data.startsWith(anno)).map((i) => ({
+      data: i.data,
+      html: `<li><b>🌱 ${esc(MODI[i.modo] ?? "")}</b> · ${nomeOrtaggio(i.ortaggioId)}${i.varieta ? ` (${esc(i.varieta)})` : ""}
+        <br><span class="tenue piccolo">${fmt(daISO(i.data))} · ${esc(aiuola(i.aiuolaId)?.nome ?? "")}</span></li>`,
+    })),
+  ].sort((a, b) => b.data.localeCompare(a.data));
+
+  return `
+    <div class="riga" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <h2>Diario</h2>
+      <select id="anno-diario" style="width:auto">${elencoAnni.map((a) => `<option ${a === anno ? "selected" : ""}>${a}</option>`).join("")}</select>
+    </div>
+    <div class="riga-bottoni"><button id="nuovo-evento">＋ Annotazione</button><button class="secondario" id="nuova-coltura">＋ Coltura</button></div>
+    <section class="carta"><h3 style="margin-top:0">Raccolti ${anno}</h3>${tabKg}</section>
+    <section class="carta"><h3 style="margin-top:0">Annotazioni</h3>
+      ${eventi.length ? htmlEventi([...eventi].sort((a, b) => b.data.localeCompare(a.data))) : `<p class="tenue">Nessuna annotazione nel ${anno}.</p>`}
+    </section>
+    <section class="carta"><h3 style="margin-top:0">Semine e trapianti</h3>
+      ${voci.length ? `<ul class="elenco">${voci.map((v) => v.html).join("")}</ul>` : `<p class="tenue">Nessuna semina nel ${anno}.</p>`}
+    </section>`;
+}
+
+// -----------------------------------------------------------------------------
+// Vista: Luogo (GPS, clima, terreno, impostazioni)
+// -----------------------------------------------------------------------------
+function vistaLuogo() {
+  const imp = S.impostazioni;
+  const pos = imp.lat == null
+    ? `<p>L'app non sa ancora dov'è l'orto. Il modo migliore: vai nell'orto e premi il bottone, così prende la posizione col GPS.</p>`
+    : `<p><b>${esc(imp.luogo || "Posizione impostata")}</b><br>
+       <span class="tenue">${imp.lat.toFixed(5)}, ${imp.lon.toFixed(5)}${imp.altitudine != null ? ` · ${Math.round(imp.altitudine)} m di altitudine` : ""}${imp.precisione ? ` · precisione GPS ${Math.round(imp.precisione)} m` : ""}</span></p>`;
+
+  return `
+    <h2>Posizione dell'orto</h2>
+    <section class="carta">
+      ${pos}
+      <div class="riga-bottoni">
+        <button id="gps">📍 ${imp.lat == null ? "Prendi la posizione col GPS" : "Aggiorna col GPS"}</button>
+        <button class="secondario" id="manuale">Inserisci a mano</button>
+      </div>
+      <div id="stato-luogo"></div>
+      <p class="tenue piccolo">Le coordinate restano sul telefono; vengono mandate solo ai servizi gratuiti che danno meteo e clima (Open-Meteo), nome del luogo (BigDataCloud) e terreno (ISRIC SoilGrids).</p>
+    </section>
+
+    <h2>Clima del luogo</h2>
+    <section class="carta" id="box-clima">${htmlClima()}</section>
+
+    <h2>Terreno</h2>
+    <section class="carta" id="box-terreno">${htmlTerreno()}</section>
+
+    <h2>Date per il calendario</h2>
+    <section class="carta">
+      <p>Ultima brinata di primavera: <b>${fmtMmdd(imp.ultimaBrinata)}</b><br>Prima brinata d'autunno: <b>${fmtMmdd(imp.primaBrinata)}</b></p>
+      <p class="tenue piccolo">Tutto il calendario si sposta con queste due date. Le calcola l'analisi del clima; puoi correggerle se conosci il tuo orto meglio delle statistiche.</p>
+      <button class="secondario" id="date-brinate">Modifica le date</button>
+    </section>
+
+    <h2>Dati e promemoria</h2>
+    <section class="carta">
+      <p class="tenue piccolo">I dati stanno solo su questo telefono: fai ogni tanto una copia di sicurezza (file .json da tenere al sicuro, per esempio su Drive).</p>
+      <div class="riga-bottoni">
+        <button class="secondario" id="esporta">💾 Copia di sicurezza</button>
+        <button class="secondario" id="importa">📂 Ripristina da file</button>
+        <input type="file" id="file-importa" accept="application/json,.json" hidden>
+      </div>
+      <p class="tenue piccolo">Promemoria: scarica un file di calendario (.ics) con i trapianti e le raccolte previsti e con l'inizio delle semine dei tuoi ortaggi ★ per i prossimi 12 mesi. Aprilo con l'app Calendario o importalo in Google Calendar dal computer.</p>
+      <div class="riga-bottoni"><button class="secondario" id="ics">📅 Scarica promemoria (.ics)</button></div>
+    </section>`;
+}
+
+function statoLuogo(html) {
+  const b = el("stato-luogo");
+  if (b) b.innerHTML = html;
+}
+
+function prendiGPS() {
+  if (!navigator.geolocation) {
+    statoLuogo(`<div class="pericolo">Questo browser non dà accesso al GPS.</div>`);
+    return;
+  }
+  statoLuogo(`<p class="tenue">Cerco la posizione… (concedi il permesso se te lo chiede)</p>`);
+  navigator.geolocation.getCurrentPosition(
+    (p) => impostaPosizione(p.coords.latitude, p.coords.longitude, p.coords.accuracy),
+    (e) => statoLuogo(`<div class="pericolo">Posizione non disponibile: ${esc(e.message)}. Controlla che la localizzazione sia attiva e che il sito abbia il permesso.</div>`),
+    { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 },
+  );
+}
+
+function posizioneManuale() {
+  const imp = S.impostazioni;
+  modulo({
+    titolo: "Posizione a mano",
+    campi: [
+      { id: "lat", etichetta: "Latitudine (es. 45.8566)", valore: imp.lat ?? "", richiesto: true },
+      { id: "lon", etichetta: "Longitudine (es. 9.3977)", valore: imp.lon ?? "", richiesto: true },
+    ],
+    extra: `<p class="tenue piccolo">Su Google Maps tieni premuto sul punto dell'orto: in alto compaiono le coordinate da copiare.</p>`,
+    testoSalva: "Usa questa posizione",
+    salva: (v) => {
+      const lat = Number(v.lat.replace(",", ".")), lon = Number(v.lon.replace(",", "."));
+      if (!(Math.abs(lat) <= 90 && Math.abs(lon) <= 180)) return false;
+      setTimeout(() => impostaPosizione(lat, lon, null), 0);
+    },
+  });
+}
+
+async function impostaPosizione(lat, lon, precisione) {
+  const imp = S.impostazioni;
+  imp.lat = Math.round(lat * 1e5) / 1e5;
+  imp.lon = Math.round(lon * 1e5) / 1e5;
+  imp.precisione = precisione;
+  S.meteo = null;
+  salva_e_ridisegna();
+  statoLuogo(`<p class="tenue">Cerco altitudine e nome del luogo…</p>`);
+  try {
+    const [alt, nome] = await Promise.allSettled([
+      scaricaJSON(`https://api.open-meteo.com/v1/elevation?latitude=${imp.lat}&longitude=${imp.lon}`),
+      scaricaJSON(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${imp.lat}&longitude=${imp.lon}&localityLanguage=it`),
+    ]);
+    if (alt.status === "fulfilled") imp.altitudine = alt.value.elevation?.[0] ?? null;
+    if (nome.status === "fulfilled") {
+      const n = nome.value;
+      imp.luogo = [n.locality || n.city, n.principalSubdivision].filter(Boolean).join(", ");
+    }
+    salva_e_ridisegna();
+    await analizzaClima(true);
+  } catch (e) {
+    statoLuogo(`<div class="pericolo">Errore: ${esc(e.message)}</div>`);
+  }
+}
+
+// --- Clima: 10 anni di dati giornalieri (Open-Meteo, archivio ERA5) ----------
+async function analizzaClima(applica) {
+  const imp = S.impostazioni;
+  if (imp.lat == null) return;
+  const box = el("box-clima");
+  if (box) box.innerHTML = `<p class="tenue">Analizzo il clima degli ultimi 10 anni… (qualche secondo)</p>`;
+  const annoFine = oggi().getFullYear() - 1;
+  const q = new URLSearchParams({
+    latitude: imp.lat, longitude: imp.lon, timezone: "Europe/Rome",
+    start_date: `${annoFine - 9}-01-01`, end_date: `${annoFine}-12-31`,
+    daily: "temperature_2m_min,temperature_2m_max,precipitation_sum",
+  });
+  if (imp.altitudine != null) q.set("elevation", imp.altitudine);
+  try {
+    const d = (await scaricaJSON("https://archive-api.open-meteo.com/v1/archive?" + q)).daily;
+    const perAnno = {};
+    const mese = Array.from({ length: 12 }, () => ({ min: 0, max: 0, n: 0, mm: 0 }));
+    let minimaAssoluta = { t: 99, data: "" };
+    d.time.forEach((t, k) => {
+      const tmin = d.temperature_2m_min[k], tmax = d.temperature_2m_max[k], mm = d.precipitation_sum[k];
+      if (tmin == null || tmax == null) return;
+      const a = t.slice(0, 4), m = Number(t.slice(5, 7)) - 1;
+      const g = giornoAnno(t.slice(5));
+      const pa = (perAnno[a] ??= { primavera: null, autunno: null, gelo: 0 });
+      if (tmin <= SOGLIA_BRINATA && m < 6) pa.primavera = Math.max(pa.primavera ?? 0, g);
+      if (tmin <= SOGLIA_BRINATA && m >= 7 && pa.autunno == null) pa.autunno = g;
+      if (tmin < 0) pa.gelo++;
+      if (tmin < minimaAssoluta.t) minimaAssoluta = { t: tmin, data: t };
+      mese[m].min += tmin; mese[m].max += tmax; mese[m].mm += mm ?? 0; mese[m].n++;
+    });
+    const anni = Object.keys(perAnno).length;
+    const prim = Object.values(perAnno).map((x) => x.primavera).filter((x) => x != null).sort((a, b) => a - b);
+    const aut = Object.values(perAnno).map((x) => x.autunno).filter((x) => x != null).sort((a, b) => a - b);
+    const mediana = (l) => l[Math.floor((l.length - 1) / 2)];
+    const quantile = (l, q) => l[Math.min(l.length - 1, Math.max(0, Math.ceil(q * l.length) - 1))];
+    S.clima = {
+      quando: Date.now(), lat: imp.lat, lon: imp.lon, anni: `${annoFine - 9}–${annoFine}`,
+      primaveraMediana: prim.length ? mmddDaGiorno(mediana(prim)) : null,
+      primaveraSicura: prim.length ? mmddDaGiorno(quantile(prim, 0.8)) : null,
+      autunnoMediana: aut.length ? mmddDaGiorno(mediana(aut)) : null,
+      autunnoSicuro: aut.length ? mmddDaGiorno(quantile(aut, 0.2)) : null,
+      giorniGelo: Math.round(Object.values(perAnno).reduce((s, x) => s + x.gelo, 0) / anni),
+      minimaAssoluta,
+      mesi: mese.map((x) => ({ min: x.min / x.n, max: x.max / x.n, mm: x.mm / anni })),
+    };
+    if (applica) {
+      if (S.clima.primaveraSicura) imp.ultimaBrinata = S.clima.primaveraSicura;
+      if (S.clima.autunnoSicuro) imp.primaBrinata = S.clima.autunnoSicuro;
+    }
+    salva_e_ridisegna();
+    statoLuogo(applica ? `<div class="bene">Fatto: il calendario ora usa le brinate del tuo luogo.</div>` : "");
+  } catch (e) {
+    if (el("box-clima")) el("box-clima").innerHTML = `<div class="pericolo">Analisi del clima non riuscita: ${esc(e.message)}</div>${htmlClima(true)}`;
+  }
+}
+
+function htmlClima(soloBottone) {
+  const c = S.clima;
+  const imp = S.impostazioni;
+  if (imp.lat == null) return `<p class="tenue">Imposta prima la posizione.</p>`;
+  const bottone = `<div class="riga-bottoni"><button class="secondario" id="analizza-clima">🌡️ ${c ? "Rifai l'analisi" : "Analizza il clima"}</button></div>`;
+  if (!c || soloBottone) return `<p class="tenue">Con 10 anni di temperature giornaliere del tuo punto calcolo quando cadono davvero l'ultima e la prima brinata.</p>${bottone}`;
+  const righe = c.mesi.map((m, k) => `<tr><td>${MESI[k]}</td><td class="num">${m.min.toFixed(1)}</td><td class="num">${m.max.toFixed(1)}</td><td class="num">${Math.round(m.mm)}</td></tr>`).join("");
+  return `
+    <p>Dati giornalieri ${esc(c.anni)} (rianalisi ERA5, corretti per l'altitudine). Brinata = minima dell'aria ≤ ${SOGLIA_BRINATA} °C.</p>
+    <table>
+      <tr><th>Ultima brinata di primavera</th><td>di solito il <b>${c.primaveraMediana ? fmtMmdd(c.primaveraMediana) : "—"}</b>; in 4 anni su 5 entro il <b>${c.primaveraSicura ? fmtMmdd(c.primaveraSicura) : "—"}</b></td></tr>
+      <tr><th>Prima brinata d'autunno</th><td>di solito il <b>${c.autunnoMediana ? fmtMmdd(c.autunnoMediana) : "—"}</b>; in 4 anni su 5 non prima del <b>${c.autunnoSicuro ? fmtMmdd(c.autunnoSicuro) : "—"}</b></td></tr>
+      <tr><th>Giorni di gelo</th><td>${c.giorniGelo} all'anno (minima sotto 0 °C)</td></tr>
+      <tr><th>Minima più bassa</th><td>${c.minimaAssoluta.t.toFixed(1)} °C il ${fmt(daISO(c.minimaAssoluta.data))} ${c.minimaAssoluta.data.slice(0, 4)}</td></tr>
+    </table>
+    <h3>Medie mensili</h3>
+    <div class="scorri"><table><tr><th>Mese</th><th class="num">Min °C</th><th class="num">Max °C</th><th class="num">Pioggia mm</th></tr>${righe}</table></div>
+    <p class="tenue piccolo">Il calendario usa le date «4 anni su 5»: più prudenti della media. Nelle conche e vicino al suolo può brinare anche qualche giorno dopo; vicino al lago spesso qualche giorno prima.</p>
+    ${bottone}`;
+}
+
+// --- Terreno: ISRIC SoilGrids (stime a 250 m) ---------------------------------
+const PROPRIETA_SUOLO = ["clay", "sand", "silt", "phh2o", "soc", "nitrogen", "cec"];
+
+async function analizzaTerreno() {
+  const imp = S.impostazioni;
+  if (imp.lat == null) return;
+  const box = el("box-terreno");
+  const scostamenti = [[0, 0], [0.003, 0], [-0.003, 0], [0, 0.004], [0, -0.004]];
+  for (const [dlat, dlon] of scostamenti) {
+    if (box) box.innerHTML = `<p class="tenue">Interrogo la mappa dei suoli ISRIC SoilGrids${dlat || dlon ? " (provo un punto vicino)" : ""}…</p>`;
+    const lat = imp.lat + dlat, lon = imp.lon + dlon;
+    const q = PROPRIETA_SUOLO.map((p) => `property=${p}`).join("&")
+      + "&depth=0-5cm&depth=5-15cm&depth=15-30cm&value=mean";
+    let dati;
+    try {
+      dati = await scaricaJSON(`https://rest.isric.org/soilgrids/v2.0/properties/query?lon=${lon}&lat=${lat}&${q}`);
+    } catch (e) {
+      if (box) box.innerHTML = `<div class="pericolo">Il servizio dei suoli non risponde (${esc(e.message)}). Riprova tra qualche minuto: accetta poche richieste al minuto.</div>${htmlTerreno(true)}`;
+      return;
+    }
+    const valori = {};
+    for (const l of dati.properties.layers) {
+      const f = l.unit_measure.d_factor;
+      valori[l.name] = l.depths.map((d) => (d.values.mean == null ? null : d.values.mean / f));
+    }
+    if (valori.clay?.some((v) => v != null)) {
+      // Media pesata 0–30 cm (spessori 5, 10, 15 cm)
+      const pesi = [5, 10, 15];
+      const media = (arr) => {
+        let s = 0, p = 0;
+        arr.forEach((v, k) => { if (v != null) { s += v * pesi[k]; p += pesi[k]; } });
+        return p ? s / p : null;
+      };
+      S.terreno = {
+        quando: Date.now(), lat, lon, spostato: Boolean(dlat || dlon),
+        strati: valori,
+        media: Object.fromEntries(Object.entries(valori).map(([k, v]) => [k, media(v)])),
+      };
+      salva_e_ridisegna();
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  if (box) box.innerHTML = `<div class="avviso">La mappa non ha dati per questa zona (succede nelle aree urbane o coperte da edifici).</div>${htmlTerreno(true)}`;
+}
+
+function classeTessitura(sabbia, limo, argilla) {
+  const s = sabbia, l = limo, a = argilla;
+  if (l + 1.5 * a < 15) return "sabbioso";
+  if (l + 2 * a < 30) return "sabbioso-franco";
+  if ((a >= 7 && a < 20 && s > 52) || (a < 7 && l < 50)) return "franco-sabbioso";
+  if (a >= 7 && a < 27 && l >= 28 && l < 50 && s <= 52) return "franco";
+  if ((l >= 50 && a >= 12 && a < 27) || (l >= 50 && l < 80 && a < 12)) return "franco-limoso";
+  if (l >= 80 && a < 12) return "limoso";
+  if (a >= 20 && a < 35 && l < 28 && s > 45) return "franco-sabbioso-argilloso";
+  if (a >= 27 && a < 40 && s > 20 && s <= 45) return "franco-argilloso";
+  if (a >= 27 && a < 40 && s <= 20) return "franco-limoso-argilloso";
+  if (a >= 35 && s > 45) return "argilloso-sabbioso";
+  if (a >= 40 && l >= 40) return "argilloso-limoso";
+  return "argilloso";
+}
+
+const CONSIGLI_TESSITURA = {
+  sabbioso: "Drena benissimo e si scalda presto in primavera, ma trattiene poca acqua e pochi nutrienti. Tanto compost ogni anno, pacciamatura e annaffiature frequenti. Ottimo per carote, patate, asparagi e meloni.",
+  franco: "La tessitura ideale per l'orto: equilibrio tra drenaggio e riserva d'acqua. Basta mantenere la sostanza organica con compost o letame maturo.",
+  limoso: "Fertile ma tende a fare la crosta in superficie dopo la pioggia e a compattarsi. Pacciama, non lavorarlo bagnato e aggiungi compost per dargli struttura.",
+  argilloso: "Ricco e trattiene acqua e nutrienti, ma è freddo in primavera, si compatta e ristagna. Lavoralo solo in tempera, aggiungi molto compost, valuta aiuole rialzate e non calpestare le aiuole. Bene per cavoli, zucche e fagioli; difficile per le carote.",
+};
+function consiglioTessitura(classe) {
+  if (classe.startsWith("argill") || classe.endsWith("argilloso")) return CONSIGLI_TESSITURA.argilloso;
+  if (classe.startsWith("sabbioso")) return CONSIGLI_TESSITURA.sabbioso;
+  if (classe.includes("limoso")) return CONSIGLI_TESSITURA.limoso;
+  return CONSIGLI_TESSITURA.franco;
+}
+function consiglioPh(ph) {
+  if (ph < 5.5) return "Acido: molti ortaggi soffrono. Correggi in autunno con calce agricola o cenere di legna (poca e ogni anno), e misura di nuovo.";
+  if (ph < 6.5) return "Leggermente acido: va bene per quasi tutto l'orto (patate e fragole lo preferiscono). I cavoli gradiscono un po' di cenere o calce.";
+  if (ph <= 7.5) return "Neutro: ideale per la maggior parte degli ortaggi.";
+  return "Alcalino (calcareo): possibili carenze di ferro (foglie gialle con nervature verdi). Usa molta sostanza organica, evita la cenere.";
+}
+
+function htmlTerreno(soloBottone) {
+  const t = S.terreno;
+  const imp = S.impostazioni;
+  if (imp.lat == null) return `<p class="tenue">Imposta prima la posizione.</p>`;
+  const bottone = `<div class="riga-bottoni"><button class="secondario" id="analizza-terreno">🟤 ${t ? "Rifai la stima" : "Stima il terreno dalla mappa"}</button></div>`;
+  const avvertenza = `<p class="tenue piccolo">Attenzione: è una stima della mappa mondiale ISRIC SoilGrids (celle di 250 m, ricavata da modelli), non un'analisi del tuo orto. Un orto lavorato e concimato per anni è spesso diverso, soprattutto in sostanza organica e pH. Per dati veri: un'analisi di laboratorio (30–60 €, per esempio presso un consorzio agrario) oppure da te la prova del barattolo per la tessitura e un kit per il pH.</p>`;
+  if (!t || soloBottone) return `<p class="tenue">Ricava tessitura (sabbia, limo, argilla), pH e sostanza organica dalla mappa dei suoli.</p>${bottone}${avvertenza}`;
+  const m = t.media;
+  const classe = classeTessitura(m.sand, m.silt, m.clay);
+  const so = m.soc != null ? (m.soc * 1.72) / 10 : null; // sostanza organica %
+  const giudizioSo = so == null ? "" : so < 1.5 ? "bassa: aggiungi compost ogni anno" : so < 3 ? "media" : "buona";
+  const cec = m.cec;
+  const giudizioCec = cec == null ? "" : cec < 10 ? "bassa (trattiene pochi nutrienti: concima poco e spesso)" : cec <= 25 ? "media" : "alta (trattiene bene i nutrienti)";
+  const strati = ["0–5 cm", "5–15 cm", "15–30 cm"];
+  const riga = (nome, k, cifre = 0, mult = 1) => `<tr><td>${nome}</td>${t.strati[k].map((v) => `<td class="num">${v == null ? "—" : (v * mult).toFixed(cifre)}</td>`).join("")}</tr>`;
+  return `
+    <p><b>Terreno ${classe}</b>${t.spostato ? ` <span class="tenue">(dato di un punto a qualche centinaio di metri)</span>` : ""}</p>
+    <p>Sabbia ${Math.round(m.sand)}% · limo ${Math.round(m.silt)}% · argilla ${Math.round(m.clay)}%</p>
+    <p>${esc(consiglioTessitura(classe))}</p>
+    <p><b>pH ${m.phh2o.toFixed(1)}</b>: ${esc(consiglioPh(m.phh2o))}</p>
+    ${so != null ? `<p><b>Sostanza organica circa ${so.toFixed(1)}%</b> nei primi 30 cm: ${giudizioSo}.</p>` : ""}
+    ${cec != null ? `<p><b>Capacità di scambio ${cec.toFixed(0)} cmol/kg</b>: ${giudizioCec}.</p>` : ""}
+    <h3>Per profondità</h3>
+    <div class="scorri"><table>
+      <tr><th></th>${strati.map((s) => `<th class="num">${s}</th>`).join("")}</tr>
+      ${riga("Sabbia %", "sand")}${riga("Limo %", "silt")}${riga("Argilla %", "clay")}
+      ${riga("pH", "phh2o", 1)}${riga("Carbonio org. g/kg", "soc")}${riga("Azoto g/kg", "nitrogen", 1)}${riga("CSC cmol/kg", "cec")}
+    </table></div>
+    ${avvertenza}
+    ${bottone}`;
+}
+
+function modificaDateBrinate() {
+  const imp = S.impostazioni;
+  const anno = oggi().getFullYear();
+  modulo({
+    titolo: "Date delle brinate",
+    campi: [
+      { id: "u", etichetta: "Ultima brinata di primavera", tipo: "date", valore: `${anno}-${imp.ultimaBrinata}`, richiesto: true },
+      { id: "p", etichetta: "Prima brinata d'autunno", tipo: "date", valore: `${anno}-${imp.primaBrinata}`, richiesto: true },
+    ],
+    extra: `<p class="tenue piccolo">Conta solo giorno e mese. Valori iniziali per 430 m vicino al lago di Lecco: 20 aprile e 10 novembre.</p>`,
+    salva: (v) => {
+      imp.ultimaBrinata = v.u.slice(5);
+      imp.primaBrinata = v.p.slice(5);
+    },
+  });
+}
+
+// --- Copia di sicurezza e promemoria -----------------------------------------
+function esportaDati() {
+  scaricaFile(`orto-copia-${aISO(oggi())}.json`, JSON.stringify(S, null, 1), "application/json");
+}
+
+function importaDati(file) {
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      const s = JSON.parse(r.result);
+      if (!s.impostazioni || !Array.isArray(s.aiuole)) throw new Error("non è una copia di questa app");
+      if (!confirm("Sostituire tutti i dati attuali con quelli del file?")) return;
+      localStorage.setItem(CHIAVE, JSON.stringify(s));
+      S = carica();
+      disegna();
+      alert("Dati ripristinati.");
+    } catch (e) {
+      alert("File non valido: " + e.message);
+    }
+  };
+  r.readAsText(file);
+}
+
+function esportaIcs() {
+  const ora = oggi();
+  const fino = piuGiorni(ora, 365);
+  const voci = [];
+  for (const i of impiantiAttivi()) {
+    for (const s of stimeImpianto(i)) {
+      if (s.data >= ora) voci.push({ data: s.data, titolo: `🌱 ${s.testo}`, desc: `Stima dal diario dell'orto (${aiuola(i.aiuolaId)?.nome ?? ""}).` });
+    }
+  }
+  for (const id of S.impostazioni.preferiti) {
+    const o = PER_ID[id];
+    for (const f of ["sem", "dir", "tra"]) {
+      for (const w of finestreTra(o, f, ora, fino)) {
+        if (w.inizio >= ora && w.inizio <= fino) {
+          voci.push({ data: w.inizio, titolo: `${o.emoji} ${FASI[f].verbo}: ${o.nome}`, desc: `Periodo consigliato fino al ${fmt(w.fine)}.` });
+        }
+      }
+    }
+  }
+  if (!voci.length) {
+    alert("Non c'è niente da mettere in calendario: aggiungi colture nell'orto o segna con ★ i tuoi ortaggi.");
+    return;
+  }
+  const d = (x) => aISO(x).replaceAll("-", "");
+  const testoIcs = (s) => s.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z";
+  const righe = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Il mio orto//IT", "CALSCALE:GREGORIAN", "X-WR-CALNAME:Orto"];
+  voci.forEach((v, k) => {
+    righe.push("BEGIN:VEVENT", `UID:orto-${d(v.data)}-${k}@ilmioorto`, `DTSTAMP:${stamp}`,
+      `DTSTART;VALUE=DATE:${d(v.data)}`, `DTEND;VALUE=DATE:${d(piuGiorni(v.data, 1))}`,
+      `SUMMARY:${testoIcs(v.titolo)}`, `DESCRIPTION:${testoIcs(v.desc)}`,
+      "BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${testoIcs(v.titolo)}`, "TRIGGER:PT8H", "END:VALARM",
+      "END:VEVENT");
+  });
+  righe.push("END:VCALENDAR");
+  scaricaFile(`orto-promemoria-${aISO(ora)}.ics`, righe.join("\r\n"), "text/calendar");
+}
+
+// -----------------------------------------------------------------------------
+// Disegno e navigazione
+// -----------------------------------------------------------------------------
+function rotta() {
+  const h = location.hash.replace(/^#/, "") || "oggi";
+  const [vista, param] = h.split("/");
+  return { vista: ["oggi", "calendario", "orto", "diario", "luogo"].includes(vista) ? vista : "oggi", param };
+}
+
+function disegna() {
+  const { vista, param } = rotta();
+  const app = el("app");
+  const imp = S.impostazioni;
+  el("sottotitolo").textContent = imp.luogo ? `${imp.luogo}${imp.altitudine != null ? ` · ${Math.round(imp.altitudine)} m` : ""}` : fmtLungo(oggi());
+  document.querySelectorAll(".schede a").forEach((a) => a.classList.toggle("attiva", a.dataset.vista === vista));
+
+  const viste = { oggi: vistaOggi, calendario: vistaCalendario, orto: () => vistaOrto(param), diario: vistaDiario, luogo: vistaLuogo };
+  const scroll = window.scrollY;
+  app.innerHTML = viste[vista]();
+  if (disegna.ultima === location.hash) window.scrollTo(0, scroll);
+  disegna.ultima = location.hash;
+
+  if (vista === "oggi") dopoOggi();
+  collega(app);
+}
+
+// Collega i bottoni della vista corrente.
+function collega(root) {
+  const su = (sel, fn) => root.querySelectorAll(sel).forEach((b) => b.addEventListener("click", (e) => { e.preventDefault(); fn(b, e); }));
+  const imp = (id) => S.impianti.find((i) => i.id === id);
+  su("[data-ortaggio]", (b) => schedaOrtaggio(b.dataset.ortaggio));
+  su("[data-trapianta]", (b) => moduloTrapianto(imp(b.dataset.trapianta)));
+  su("[data-raccolto]", (b) => moduloEvento({ tipo: "raccolto", impiantoId: b.dataset.raccolto, aiuolaId: imp(b.dataset.raccolto)?.aiuolaId }));
+  su("[data-evento-imp]", (b) => moduloEvento({ tipo: "nota", impiantoId: b.dataset.eventoImp, aiuolaId: imp(b.dataset.eventoImp)?.aiuolaId }));
+  su("[data-modifica-imp]", (b) => moduloImpianto({ impianto: imp(b.dataset.modificaImp) }));
+  su("[data-fine]", (b) => chiudiImpianto(imp(b.dataset.fine)));
+  su("[data-modifica-ev]", (b) => moduloEvento({ evento: S.eventi.find((e) => e.id === b.dataset.modificaEv) }));
+  su("#nuova-aiuola", () => moduloAiuola());
+  su("#nuova-coltura", () => moduloImpianto({}));
+  su("#nuovo-evento", () => moduloEvento({}));
+
+  const { param } = rotta();
+  const a = param && aiuola(param);
+  if (a) {
+    su("#coltura-qui", () => moduloImpianto({ aiuolaId: a.id }));
+    su("#evento-qui", () => moduloEvento({ tipo: "lavoro", aiuolaId: a.id }));
+    su("#modifica-aiuola", () => moduloAiuola(a));
+    su("#elimina-aiuola", () => {
+      const n = S.impianti.filter((i) => i.aiuolaId === a.id).length;
+      if (!confirm(`Eliminare l'aiuola «${a.nome}»${n ? ` e tutta la sua storia (${n} colture)` : ""}?`)) return;
+      S.aiuole = S.aiuole.filter((x) => x.id !== a.id);
+      S.impianti = S.impianti.filter((i) => i.aiuolaId !== a.id);
+      S.eventi = S.eventi.filter((e) => e.aiuolaId !== a.id);
+      salva();
+      location.hash = "#orto";
+    });
+  }
+
+  el("anno-diario")?.addEventListener("change", (e) => { annoDiario = e.target.value; disegna(); });
+  su("#gps", prendiGPS);
+  su("#manuale", posizioneManuale);
+  su("#analizza-clima", () => analizzaClima(true));
+  su("#analizza-terreno", analizzaTerreno);
+  su("#date-brinate", modificaDateBrinate);
+  su("#esporta", esportaDati);
+  su("#importa", () => el("file-importa").click());
+  el("file-importa")?.addEventListener("change", (e) => { if (e.target.files[0]) importaDati(e.target.files[0]); });
+  su("#ics", esportaIcs);
+}
+
+window.addEventListener("hashchange", () => { chiudiFinestra(); disegna(); });
+
+// Il meteo si aggiorna quando si torna sull'app.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && rotta().vista === "oggi") dopoOggi();
+});
+
+if ("serviceWorker" in navigator && location.protocol !== "file:") {
+  // Quando arriva una versione nuova dell'app (nuovo sw.js) la propongo.
+  const giaControllata = Boolean(navigator.serviceWorker.controller);
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!giaControllata || el("aggiornamento")) return;
+    const b = document.createElement("button");
+    b.id = "aggiornamento";
+    b.textContent = "🔄 C'è una versione nuova dell'app: tocca per aggiornare";
+    b.style.cssText = "position:fixed;left:12px;right:12px;bottom:84px;z-index:30;justify-content:center";
+    b.addEventListener("click", () => location.reload());
+    document.body.appendChild(b);
+  });
+  navigator.serviceWorker.register("sw.js").catch((e) => console.warn("service worker", e));
+}
+navigator.storage?.persist?.();
+
+disegna();

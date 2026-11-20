@@ -1,0 +1,16 @@
+{
+  "name": "Il mio orto",
+  "short_name": "Orto",
+  "description": "Calendario dell'orto su misura e diario delle aiuole",
+  "lang": "it",
+  "start_url": "./#oggi",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f4ec",
+  "theme_color": "#2f6b3a",
+  "icons": [
+    { "src": "icone/icona-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icone/icona-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icone/icona.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Il mio orto</title>
+  <meta name="description" content="Calendario dell'orto su misura e diario delle aiuole">
+  <meta name="theme-color" content="#2f6b3a">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icone/icona.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icone/icona-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="testata">
+    <h1 id="titolo">Il mio orto</h1>
+    <span id="sottotitolo"></span>
+  </header>
+
+  <main id="app" aria-live="polite"></main>
+  <div id="errori" hidden></div>
+
+  <nav class="schede" aria-label="Sezioni">
+    <a href="#oggi" data-vista="oggi"><span aria-hidden="true">☀️</span>Oggi</a>
+    <a href="#calendario" data-vista="calendario"><span aria-hidden="true">📅</span>Calendario</a>
+    <a href="#orto" data-vista="orto"><span aria-hidden="true">🌱</span>Orto</a>
+    <a href="#diario" data-vista="diario"><span aria-hidden="true">📓</span>Diario</a>
+    <a href="#luogo" data-vista="luogo"><span aria-hidden="true">📍</span>Luogo</a>
+  </nav>
+
+  <dialog id="finestra"></dialog>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
