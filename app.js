@@ -893,11 +893,12 @@ function vistaLuogo() {
 
     <h2>Dati e promemoria</h2>
     <section class="carta">
-      <p class="tenue piccolo">I dati stanno solo su questo telefono: fai ogni tanto una copia di sicurezza (file .json da tenere al sicuro, per esempio su Drive).</p>
+      <p class="tenue piccolo">I dati stanno solo su questo telefono: fai ogni tanto una copia di sicurezza. «Invia copia» la manda direttamente con WhatsApp, email o Drive (anche per passarla al computer); «Ripristina da file» la carica su questo dispositivo.</p>
       <div class="riga-bottoni">
-        <button class="secondario" id="esporta">💾 Copia di sicurezza</button>
+        <button id="invia">📤 Invia copia</button>
+        <button class="secondario" id="esporta">💾 Scarica copia</button>
         <button class="secondario" id="importa">📂 Ripristina da file</button>
-        <input type="file" id="file-importa" accept="application/json,.json" hidden>
+        <input type="file" id="file-importa" accept="application/json,text/plain,.json,.txt" hidden>
       </div>
       <p class="tenue piccolo">Promemoria: scarica un file di calendario (.ics) con i trapianti e le raccolte previsti e con l'inizio delle semine dei tuoi ortaggi ★ per i prossimi 12 mesi. Aprilo con l'app Calendario o importalo in Google Calendar dal computer.</p>
       <div class="riga-bottoni"><button class="secondario" id="ics">📅 Scarica promemoria (.ics)</button></div>
@@ -1177,6 +1178,23 @@ function esportaDati() {
   scaricaFile(`orto-copia-${aISO(oggi())}.json`, JSON.stringify(S, null, 1), "application/json");
 }
 
+// Invia la copia col menu di condivisione del telefono. Chrome su Android non
+// condivide file .json: la copia parte come .txt (il contenuto è lo stesso).
+async function inviaCopia() {
+  const nome = `orto-copia-${aISO(oggi())}.txt`;
+  const file = new File([JSON.stringify(S, null, 1)], nome, { type: "text/plain" });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: "Copia dell'orto", text: "Copia di sicurezza dell'app Il mio orto" });
+    } catch (e) {
+      if (e.name !== "AbortError") alert("Invio non riuscito: " + e.message);
+    }
+    return;
+  }
+  scaricaFile(nome, JSON.stringify(S, null, 1), "text/plain");
+  alert("Questo browser non può inviare file direttamente: la copia è stata scaricata nella cartella Download.");
+}
+
 function importaDati(file) {
   const r = new FileReader();
   r.onload = () => {
@@ -1297,6 +1315,7 @@ function collega(root) {
   su("#analizza-clima", () => analizzaClima(true));
   su("#analizza-terreno", analizzaTerreno);
   su("#date-brinate", modificaDateBrinate);
+  su("#invia", inviaCopia);
   su("#esporta", esportaDati);
   su("#importa", () => el("file-importa").click());
   el("file-importa")?.addEventListener("change", (e) => { if (e.target.files[0]) importaDati(e.target.files[0]); });

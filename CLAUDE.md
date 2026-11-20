@@ -13,3 +13,6 @@ App web installabile (PWA) per l'orto: calendario di semina, trapianto e raccolt
 - Per far arrivare una modifica ai telefoni: cambiare `VERSIONE` in `sw.js` (l'app mostra "c'è una versione nuova").
 - Prove con Chrome senza finestra: `google-chrome --headless=new --user-data-dir=<profilo nuovo> --window-size=412,2000 --screenshot=...`. Usare ogni volta un profilo nuovo: il service worker serve la versione in cache.
 - Le pagine di prova si chiamano `prova*.html` (ignorate da git) e vanno cancellate dopo.
+
+## Pubblicazione
+Online su GitHub Pages: https://briocol-jpg.github.io/orto/ (repository pubblico `briocol-jpg/orto`, ramo `main`, cartella root). Il computer non ha credenziali GitHub: l'utente carica i file cambiati dal sito (Add file → Upload files). Il repository git locale non ha remote.
