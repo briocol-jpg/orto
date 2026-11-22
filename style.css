@@ -271,3 +271,16 @@ button.elimina {
   border-color: var(--pericolo);
   margin-left: auto;
 }
+
+/* Pianta dell'orto vista dall'alto */
+svg.pianta { width: 100%; height: auto; display: block; max-height: 70vh; }
+svg.pianta a { cursor: pointer; }
+.p-aiuola { fill: #c8a477; stroke: #7a5a33; stroke-width: 0.03; }
+.p-aiuola.p-senza { fill: #e3d3bb; stroke-dasharray: 0.12 0.08; }
+.p-numero { font-weight: 700; fill: #3b2a14; }
+.p-misura { fill: var(--tenue); }
+@media (prefers-color-scheme: dark) {
+  .p-aiuola { fill: #6b5236; stroke: #b08a5c; }
+  .p-aiuola.p-senza { fill: #3a3127; }
+  .p-numero { fill: #f3e6d2; }
+}
