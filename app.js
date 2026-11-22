@@ -818,12 +818,29 @@ function modoPredefinito(ortaggioId, aiuolaId) {
   return o && !o.dir.length && o.tra.length ? "tra" : "dir";
 }
 
+// Prima data utile, da oggi in poi, per seminare o trapiantare un ortaggio in un modo
+// ("sem", "dir", "tra"). In serra il periodo si allarga di 3 settimane per parte.
+function primaDataUtile(ortaggioId, modo, aiuolaId) {
+  const o = PER_ID[ortaggioId];
+  if (!o || !(o[modo] || []).length) return null;
+  const ora = oggi(), m = inSerra(aiuolaId) ? ANTICIPO_SERRA : 0;
+  const fin = finestreTra(o, modo, piuGiorni(ora, -m), piuGiorni(ora, 400))
+    .map((f) => ({ inizio: piuGiorni(f.inizio, -m), fine: piuGiorni(f.fine, m) }))
+    .filter((f) => f.fine >= ora)
+    .sort((a, b) => a.inizio - b.inizio)[0];
+  if (!fin) return null;
+  return { data: fin.inizio > ora ? fin.inizio : ora, fine: fin.fine, serra: m > 0 };
+}
+function fmtAnno(d) { return d.getFullYear() === oggi().getFullYear() ? fmt(d) : `${fmt(d)} ${d.getFullYear()}`; }
+
 function moduloImpianto({ aiuolaId, ortaggioId, impianto, celle } = {}) {
   const i = impianto;
   let ultimoOrtaggio = i?.ortaggioId ?? ortaggioId ?? "";
   // Proposta: la prima aiuola vera; se non ce ne sono, "Nuova aiuola".
   const aiuolaIniziale = i?.aiuolaId ?? aiuolaId ?? aiuoleOrdinate().find((a) => !a.semenzaio)?.id ?? NUOVA_AIUOLA;
   let ultimaAiuola = aiuolaIniziale;
+  // Coltura nuova: la data proposta segue ortaggio, modo e aiuola finché non la cambi tu.
+  let dataProposta = i ? null : aISO(oggi()), ultimaChiave = "";
   modulo({
     titolo: i ? "Modifica coltura" : "Nuova coltura",
     campi: [
@@ -849,9 +866,25 @@ function moduloImpianto({ aiuolaId, ortaggioId, impianto, celle } = {}) {
         ultimoOrtaggio = v.ortaggioId;
         ultimaAiuola = v.aiuolaId;
       }
-      const avvisoCelle = aggiornaSceltaCelle(form, v.aiuolaId, i?.id);
+      let proposta = "";
+      const modoOra = form.elements.modo.value;
+      const utile = v.ortaggioId ? primaDataUtile(v.ortaggioId, modoOra, v.aiuolaId) : null;
+      if (dataProposta !== null) {
+        const chiave = `${v.ortaggioId}|${modoOra}|${v.aiuolaId}`;
+        if (v.data !== dataProposta) dataProposta = null; // l'hai cambiata tu: non la tocco più
+        else if (chiave !== ultimaChiave && utile) form.elements.data.value = dataProposta = aISO(utile.data);
+        ultimaChiave = chiave;
+      }
+      if (utile) {
+        const nome = esc(MODI[modoOra].toLowerCase());
+        proposta = `<div class="bene">📅 Prima data utile per ${nome}: <b>${giorniTra(oggi(), utile.data) === 0 ? "da oggi" : "dal " + fmtAnno(utile.data)}</b> fino al ${fmtAnno(utile.fine)}${utile.serra ? " (contando il vantaggio della serra)" : ""}.</div>`;
+      } else if (v.ortaggioId) {
+        proposta = `<div class="avviso">📅 Per ${esc(PER_ID[v.ortaggioId].nome.toLowerCase())} il calendario non prevede ${esc(MODI[modoOra].toLowerCase())}: prova un altro "Come".</div>`;
+      }
+      const v2 = { ...v, data: form.elements.data.value };
+      const avvisoCelle = aggiornaSceltaCelle(form, v2.aiuolaId, i?.id);
       const celleScelte = form.elements.celle.value.split(",").filter(Boolean);
-      return aggiornaNuovaAiuola(v, form) + avvisoCelle + htmlAvvisi(v.aiuolaId, v.ortaggioId, v.data, i?.id, celleScelte);
+      return aggiornaNuovaAiuola(v2, form) + avvisoCelle + proposta + htmlAvvisi(v2.aiuolaId, v2.ortaggioId, v2.data, i?.id, celleScelte);
     },
     salva: (v) => {
       v.aiuolaId = aiuolaDaModulo(v);
