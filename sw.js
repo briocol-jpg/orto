@@ -1,7 +1,7 @@
 // Service worker: l'app funziona anche senza rete (nell'orto).
 // I file dell'app vengono serviti dalla cache e aggiornati in background;
 // le richieste ai servizi esterni (meteo, clima, terreno) vanno sempre in rete.
-const VERSIONE = "orto-v2";
+const VERSIONE = "orto-v3";
 const FILE = [
   "./", "index.html", "style.css", "data.js", "app.js", "manifest.webmanifest",
   "icone/icona.svg", "icone/icona-192.png", "icone/icona-512.png",

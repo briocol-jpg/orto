@@ -295,7 +295,8 @@ function chiudiFinestra() {
 }
 
 // campi: [{id, etichetta, tipo, valore, opzioni:[[valore, testo]], richiesto, passo}]
-function modulo({ titolo, campi, testoSalva = "Salva", salva, aggiorna, extra = "" }) {
+// elimina: se presente compare il bottone "Elimina"; restituisce false per annullare.
+function modulo({ titolo, campi, testoSalva = "Salva", salva, aggiorna, elimina, extra = "" }) {
   const htmlCampi = campi.map((c) => {
     const req = c.richiesto ? "required" : "";
     const val = c.valore ?? "";
@@ -323,9 +324,16 @@ function modulo({ titolo, campi, testoSalva = "Salva", salva, aggiorna, extra = 
       <div class="riga-bottoni">
         <button type="submit">${esc(testoSalva)}</button>
         <button type="button" class="secondario" data-chiudi>Annulla</button>
+        ${elimina ? `<button type="button" class="elimina" id="m_elimina">🗑️ Elimina</button>` : ""}
       </div>
     </form>`, (f) => {
     const form = f.querySelector("#modulo");
+    f.querySelector("#m_elimina")?.addEventListener("click", () => {
+      if (elimina() !== false) {
+        salva_e_ridisegna();
+        chiudiFinestra();
+      }
+    });
     const valori = () => {
       const v = {};
       for (const c of campi) {
@@ -405,7 +413,9 @@ function moduloImpianto({ aiuolaId, ortaggioId, impianto } = {}) {
       { id: "varieta", etichetta: "Varietà (facoltativo)", valore: i?.varieta },
       { id: "quantita", etichetta: "Quante piante / file (facoltativo)", valore: i?.quantita },
       { id: "note", etichetta: "Note", tipo: "textarea", valore: i?.note },
+      ...(i ? [{ id: "finito", etichetta: "Coltura finita (non più nell'orto)", tipo: "check", valore: i.finito }] : []),
     ],
+    elimina: i ? () => eliminaImpianto(i) : null,
     aggiorna: (v, form) => {
       if (aiuola(v.aiuolaId)?.semenzaio && v.modo !== "sem") form.elements.modo.value = "sem";
       if (v.ortaggioId !== ultimoOrtaggio) {
@@ -416,10 +426,31 @@ function moduloImpianto({ aiuolaId, ortaggioId, impianto } = {}) {
     },
     salva: (v) => {
       if (aiuola(v.aiuolaId)?.semenzaio) v.modo = "sem";
-      if (i) Object.assign(i, v);
-      else S.impianti.push({ id: nuovoId(), finito: false, ...v });
+      if (i) {
+        // Riaperta: non è più finita, via esito e data di fine.
+        if (i.finito && !v.finito) { delete i.esito; delete i.dataFine; }
+        Object.assign(i, v);
+      } else S.impianti.push({ id: nuovoId(), finito: false, ...v });
     },
   });
+}
+
+function eliminaImpianto(i) {
+  const o = PER_ID[i.ortaggioId];
+  const collegate = S.eventi.filter((e) => e.impiantoId === i.id).length;
+  if (!confirm(`Eliminare ${o?.nome.toLowerCase() ?? "questa coltura"} del ${fmt(daISO(i.data))} ${i.data.slice(0, 4)} (${aiuola(i.aiuolaId)?.nome ?? ""})?`
+    + (collegate ? `\n\nLe ${collegate} annotazioni collegate restano nel diario.` : ""))) return false;
+  S.impianti = S.impianti.filter((x) => x.id !== i.id);
+  for (const e of S.eventi) if (e.impiantoId === i.id) e.impiantoId = "";
+  // Se era un trapianto dal semenzaio, la semina torna in semenzaio.
+  const origine = i.daSemenzaio && S.impianti.find((x) => x.id === i.daSemenzaio);
+  if (origine && origine.esito === "trapiantato") {
+    origine.finito = false;
+    delete origine.esito;
+    delete origine.dataFine;
+  }
+  for (const x of S.impianti) if (x.daSemenzaio === i.id) delete x.daSemenzaio;
+  return true;
 }
 
 function moduloTrapianto(i) {
@@ -462,6 +493,10 @@ function moduloEvento({ tipo = "raccolto", aiuolaId, impiantoId, evento } = {}) 
       { id: "kg", etichetta: "Quantità raccolta in kg (solo raccolto)", tipo: "number", passo: "0.1", valore: ev?.kg },
       { id: "testo", etichetta: "Descrizione (es. prodotto usato, osservazioni)", tipo: "textarea", valore: ev?.testo },
     ],
+    elimina: ev ? () => {
+      if (!confirm(`Eliminare questa annotazione (${TIPI_EVENTO[ev.tipo] ?? ev.tipo}, ${fmt(daISO(ev.data))})?`)) return false;
+      S.eventi = S.eventi.filter((x) => x.id !== ev.id);
+    } : null,
     salva: (v) => {
       if (v.impiantoId && !v.aiuolaId) v.aiuolaId = S.impianti.find((x) => x.id === v.impiantoId)?.aiuolaId ?? "";
       v.kg = v.kg ? Number(v.kg.replace(",", ".")) : null;
@@ -766,7 +801,7 @@ function vistaAiuola(a) {
       <div class="riga-bottoni">
         ${a.semenzaio ? `<button class="piccolo" data-trapianta="${i.id}">Trapianta</button>` : `<button class="piccolo" data-raccolto="${i.id}">🧺 Raccolto</button>`}
         <button class="piccolo secondario" data-evento-imp="${i.id}">＋ Nota</button>
-        <button class="piccolo secondario" data-modifica-imp="${i.id}">Modifica</button>
+        <button class="piccolo secondario" data-modifica-imp="${i.id}">✏️ Modifica</button>
         <button class="piccolo secondario" data-fine="${i.id}">Fine coltura</button>
       </div>
     </li>`;
@@ -804,7 +839,7 @@ function htmlEventi(eventi) {
       ${imp ? ` · ${nomeOrtaggio(imp.ortaggioId)}` : ""}${e.kg ? ` · <b>${String(e.kg).replace(".", ",")} kg</b>` : ""}
       <br><span class="tenue piccolo">${fmt(daISO(e.data))} ${e.data.slice(0, 4)}${e.aiuolaId && aiuola(e.aiuolaId) ? " · " + esc(aiuola(e.aiuolaId).nome) : ""}</span>
       ${e.testo ? `<br><span class="piccolo">${esc(e.testo)}</span>` : ""}</span>
-      <button class="piccolo secondario" data-modifica-ev="${e.id}">Modifica</button></div></li>`;
+      <button class="piccolo secondario" data-modifica-ev="${e.id}">✏️ Modifica</button></div></li>`;
   }).join("")}</ul>`;
 }
 
@@ -836,8 +871,9 @@ function vistaDiario() {
   const voci = [
     ...S.impianti.filter((i) => i.data.startsWith(anno)).map((i) => ({
       data: i.data,
-      html: `<li><b>🌱 ${esc(MODI[i.modo] ?? "")}</b> · ${nomeOrtaggio(i.ortaggioId)}${i.varieta ? ` (${esc(i.varieta)})` : ""}
-        <br><span class="tenue piccolo">${fmt(daISO(i.data))} · ${esc(aiuola(i.aiuolaId)?.nome ?? "")}</span></li>`,
+      html: `<li><div class="riga"><span><b>🌱 ${esc(MODI[i.modo] ?? "")}</b> · ${nomeOrtaggio(i.ortaggioId)}${i.varieta ? ` (${esc(i.varieta)})` : ""}
+        <br><span class="tenue piccolo">${fmt(daISO(i.data))} · ${esc(aiuola(i.aiuolaId)?.nome ?? "")}${i.finito ? " · finita" : ""}</span></span>
+        <button class="piccolo secondario" data-modifica-imp="${i.id}">✏️ Modifica</button></div></li>`,
     })),
   ].sort((a, b) => b.data.localeCompare(a.data));
 

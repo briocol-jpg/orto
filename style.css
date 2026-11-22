@@ -264,3 +264,10 @@ textarea { min-height: 70px; }
 
 .griglia-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .stella { font-size: 1.3rem; background: none; border: none; color: var(--avviso); padding: 0 4px; min-height: 0; }
+
+button.elimina {
+  background: transparent;
+  color: var(--pericolo);
+  border-color: var(--pericolo);
+  margin-left: auto;
+}
