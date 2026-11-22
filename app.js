@@ -287,6 +287,14 @@ function impiantiAttivi(aiuolaId) {
 }
 
 // Prossimi passi previsti per un impianto attivo.
+// Una raccolta stimata che cade fuori stagione (es. cipolle piantate in
+// autunno: d'inverno non crescono) si sposta all'inizio del periodo di raccolta successivo.
+function inStagioneDiRaccolta(o, d) {
+  if (!o.rac?.length || finestreTra(o, "rac", d, d).length) return d;
+  const prossime = finestreTra(o, "rac", d, piuGiorni(d, 366)).filter((w) => w.inizio >= d).sort((x, y) => x.inizio - y.inizio);
+  return prossime.length ? prossime[0].inizio : d;
+}
+
 function stimeImpianto(i) {
   const o = PER_ID[i.ortaggioId];
   const out = [];
@@ -295,9 +303,9 @@ function stimeImpianto(i) {
   if (i.modo === "sem" && aiuola(i.aiuolaId)?.semenzaio) {
     const trap = piuGiorni(data, (o.semTrap || 6) * 7);
     out.push({ tipo: "tra", data: trap, testo: `Trapianto di ${o.nome}` });
-    if (o.gg) out.push({ tipo: "rac", data: piuGiorni(trap, o.gg), testo: `Prima raccolta di ${o.nome}` });
+    if (o.gg) out.push({ tipo: "rac", data: inStagioneDiRaccolta(o, piuGiorni(trap, o.gg)), testo: `Prima raccolta di ${o.nome}` });
   } else if (o.gg) {
-    out.push({ tipo: "rac", data: piuGiorni(data, o.gg), testo: `Prima raccolta di ${o.nome}` });
+    out.push({ tipo: "rac", data: inStagioneDiRaccolta(o, piuGiorni(data, o.gg)), testo: `Prima raccolta di ${o.nome}` });
   }
   return out;
 }
@@ -437,7 +445,7 @@ function htmlAvvisi(aiuolaId, ortaggioId, dataISO, escludiId, celle) {
   const margine = inSerra(aiuolaId) ? ANTICIPO_SERRA : 0;
   const dentro = fasiOk.some((f) => finestreTra(o, f, piuGiorni(d, -margine), piuGiorni(d, margine)).length);
   if (!dentro && fasiOk.some((f) => (o[f] || []).length)) {
-    h += `<div class="avviso">📅 Questa data è fuori dal periodo consigliato per ${esc(o.nome.toLowerCase())} (guarda il calendario).</div>`;
+    h += `<div class="avviso">📅 Questa data è fuori dal periodo consigliato per ${esc(o.nome.toLowerCase())}${margine ? ", anche contando 3 settimane di vantaggio della serra" : ""} (guarda il calendario).</div>`;
   }
   return h;
 }
