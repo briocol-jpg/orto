@@ -312,7 +312,8 @@ function stimeImpianto(i) {
 }
 
 // Rotazione: stessa famiglia nella stessa aiuola negli ultimi anni.
-function avvisiRotazione(aiuolaId, ortaggioId, dataISO, escludiId) {
+// Con la scacchiera conta solo chi stava nelle stesse caselle (o su tutta l'aiuola).
+function avvisiRotazione(aiuolaId, ortaggioId, dataISO, escludiId, celle) {
   const o = PER_ID[ortaggioId];
   if (!o || aiuola(aiuolaId)?.semenzaio) return [];
   const data = daISO(dataISO);
@@ -321,6 +322,7 @@ function avvisiRotazione(aiuolaId, ortaggioId, dataISO, escludiId) {
     if (i.id === escludiId || i.aiuolaId !== aiuolaId) continue;
     const altro = PER_ID[i.ortaggioId];
     if (!altro || altro.fam !== o.fam) continue;
+    if (celle?.length && i.celle?.length && !i.celle.some((c) => celle.includes(c))) continue;
     const d = daISO(i.data);
     const anni = data.getFullYear() - d.getFullYear();
     if (anni >= 1 && anni < ANNI_ROTAZIONE) {
@@ -513,7 +515,7 @@ function htmlAvvisi(aiuolaId, ortaggioId, dataISO, escludiId, celle) {
   if (!aiuolaId || !ortaggioId || !dataISO) return "";
   const o = PER_ID[ortaggioId];
   let h = "";
-  for (const t of avvisiRotazione(aiuolaId, ortaggioId, dataISO, escludiId)) h += `<div class="avviso">🔄 ${esc(t)}</div>`;
+  for (const t of avvisiRotazione(aiuolaId, ortaggioId, dataISO, escludiId, celle)) h += `<div class="avviso">🔄 ${esc(t)}</div>`;
   const v = avvisiVicini(aiuolaId, ortaggioId, escludiId, celle);
   if (v.cattivi.length) h += `<div class="pericolo">⚠️ ${esc(o.nome)} non sta bene vicino a: ${v.cattivi.map((x) => esc(PER_ID[x].nome.toLowerCase())).join(", ")}.</div>`;
   if (v.buoni.length) h += `<div class="bene">🤝 Buoni vicini: ${v.buoni.map((x) => esc(PER_ID[x].nome.toLowerCase())).join(", ")}.</div>`;
@@ -1261,7 +1263,7 @@ function vistaOrto(idAiuola) {
     `<button class="chip${z === scelta ? " attiva" : ""}" data-zona-vista="${esc(z)}">${esc(t)}</button>`).join("")}</div>` : "";
   const carte = aiuoleOrdinate().filter((a) => a.semenzaio || !scelta || (a.zona || ZONA_PREDEFINITA) === scelta).map((a) => {
     const attivi = impiantiAttivi(a.id);
-    const problemi = attivi.reduce((n, i) => n + avvisiRotazione(a.id, i.ortaggioId, i.data, i.id).length
+    const problemi = attivi.reduce((n, i) => n + avvisiRotazione(a.id, i.ortaggioId, i.data, i.id, i.celle).length
       + avvisiVicini(a.id, i.ortaggioId, i.id, i.celle).cattivi.length, 0);
     return `<a class="carta" href="#orto/${a.id}" style="display:block;color:inherit;text-decoration:none">
       <div class="riga" style="display:flex;justify-content:space-between;gap:8px"><b>${a.semenzaio ? "🪴" : a.copertura === "serra" ? "🏠" : "🟫"} ${esc(nomeAiuola(a))}</b>
@@ -1310,9 +1312,10 @@ function htmlPianta(soloZona) {
     const tutti = pezzi.flatMap((q) => angoli(q.x, 0, q.w, q.h));
     const box0 = limiti(tutti);
 
-    // Scala in pixel per metro (circa 360 px sul telefono) e testo tra 10 e 15 px,
-    // non più grande di un quarto dell'aiuola tipica.
-    const scala = Math.min(PX_PER_METRO, 360 / Math.max(box0.w, 0.5));
+    // Scala in pixel per metro: il disegno occupa la larghezza disponibile (circa 360 px
+    // sul telefono, di più sul PC); testo tra 10 e 15 px, non più di un quarto dell'aiuola tipica.
+    const disponibile = Math.max(340, (el("app")?.clientWidth || 400) - 70);
+    const scala = Math.min(PX_PER_METRO, disponibile / Math.max(box0.w, 0.5));
     const lati = pezzi.map((q) => Math.min(q.w, q.h)).sort((m, n) => m - n);
     const fs = Math.min(15 / scala, Math.max(10 / scala, lati[Math.floor(lati.length / 2)] / 4)); // testo in metri
     const testo = (px, py, contenuto, classe, size) => {
@@ -1324,7 +1327,7 @@ function htmlPianta(soloZona) {
     const etichette = [];
     const disegno = pezzi.map(({ a, x, w, h, misurata }) => {
       const attivi = impiantiAttivi(a.id);
-      const problemi = attivi.some((i) => avvisiRotazione(a.id, i.ortaggioId, i.data, i.id).length
+      const problemi = attivi.some((i) => avvisiRotazione(a.id, i.ortaggioId, i.data, i.id, i.celle).length
         || avvisiVicini(a.id, i.ortaggioId, i.id, i.celle).cattivi.length);
       const e = fs * 1.25; // lato di un'emoji
       const perRiga = Math.max(1, Math.floor((w - fs * 0.3) / e));
@@ -2032,6 +2035,17 @@ function rotta() {
   return { vista: ["oggi", "calendario", "orto", "diario", "luogo"].includes(vista) ? vista : "oggi", param };
 }
 
+// Se la finestra cambia molto di larghezza (PC, telefono girato), ridisegno la pianta.
+let larghezzaDisegno = window.innerWidth;
+window.addEventListener("resize", () => {
+  clearTimeout(window.attesaResize);
+  window.attesaResize = setTimeout(() => {
+    if (Math.abs(window.innerWidth - larghezzaDisegno) < 80 || rotta().vista !== "orto") return;
+    larghezzaDisegno = window.innerWidth;
+    disegna();
+  }, 300);
+});
+
 function disegna() {
   const { vista, param } = rotta();
   const app = el("app");
@@ -2039,6 +2053,7 @@ function disegna() {
   el("sottotitolo").textContent = imp.luogo ? `${imp.luogo}${imp.altitudine != null ? ` · ${Math.round(imp.altitudine)} m` : ""}` : fmtLungo(oggi());
   document.querySelectorAll(".schede a").forEach((a) => a.classList.toggle("attiva", a.dataset.vista === vista));
 
+  document.body.dataset.vista = vista; // sul PC la scheda Orto è più larga (vedi style.css)
   const viste = { oggi: vistaOggi, calendario: vistaCalendario, orto: () => vistaOrto(param), diario: vistaDiario, luogo: vistaLuogo };
   const scroll = window.scrollY;
   app.innerHTML = viste[vista]();
