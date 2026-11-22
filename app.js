@@ -1085,11 +1085,12 @@ function apriDiagnosi({ ortaggioId = "", aiuolaId = "", impiantoId = "" } = {}) 
       ${trovati.length ? trovati.map(({ p, n }, k) => `<details class="problema" ${scelti.size && k === 0 ? "open" : ""}>
         <summary><b>${esc(p.nome)}</b> <span class="tenue piccolo">· ${esc(p.tipo)}${scelti.size ? ` · ${n} sintom${n === 1 ? "o" : "i"} su ${scelti.size}` : ""}</span></summary>
         <p><b>Come riconoscerlo.</b> ${esc(p.riconosci)}</p>
-        <p><b>Cosa fare.</b> ${esc(p.cura)}</p>
+        <p><b>🌿 Cosa fare (biologico).</b> ${esc(p.cura)}</p>
+        ${p.nonBio ? `<p><b>⚗️ Non biologico.</b> ${esc(p.nonBio)}</p>` : ""}
         <p><b>Per prevenire.</b> ${esc(p.previeni)}</p>
         <button type="button" class="piccolo secondario" data-tratta="${p.id}">＋ Segna nel diario</button>
       </details>`).join("") : `<p class="tenue">Nessun problema noto con questi sintomi per questo ortaggio: prova a togliere qualche sintomo.</p>`}
-      <p class="tenue piccolo">È una guida per orientarsi, non una diagnosi sicura. Nel dubbio porta un rametto in un vivaio o al consorzio agrario. I prodotti citati sono ammessi in agricoltura biologica: usali sempre alle dosi dell'etichetta e rispetta i giorni prima della raccolta.</p>
+      <p class="tenue piccolo">È una guida per orientarsi, non una diagnosi sicura. Nel dubbio porta un rametto in un vivaio o al consorzio agrario. Prova prima i rimedi biologici. Per i prodotti di sintesi compra solo quelli autorizzati per l'orto di casa («uso non professionale») e per quell'ortaggio: sono i nomi dei principi attivi, li trovi scritti sull'etichetta. Usa sempre le dosi dell'etichetta e rispetta i giorni di attesa prima della raccolta.</p>
       <div class="riga-bottoni"><button class="secondario" data-chiudi>Chiudi</button></div>`;
   };
   apriFinestra(`<h2>🩺 Malattie e parassiti</h2><div id="diagnosi"></div>`, (f) => {
