@@ -284,3 +284,29 @@ svg.pianta a { cursor: pointer; }
   .p-aiuola.p-senza { fill: #3a3127; }
   .p-numero { fill: #f3e6d2; }
 }
+.p-aiuola.p-telo { fill: #3d3d3d; stroke: #1f1f1f; }
+.p-aiuola.p-organica { fill: #d8bf7a; stroke: #8c7536; }
+.p-serra { fill: rgba(170, 215, 235, 0.45); stroke: #6aa9c4; stroke-width: 0.04; pointer-events: none; }
+.p-numero.p-chiaro { fill: #f3f3f3; }
+.legenda i.l-terra { background: #c8a477; }
+.legenda i.l-telo { background: #3d3d3d; }
+.legenda i.l-organica { background: #d8bf7a; }
+.legenda i.l-serra { background: #aad7eb; }
+.p-nord text { fill: var(--testo); font-weight: 700; }
+.p-nord polygon { fill: var(--pericolo); }
+.p-nord line { stroke: var(--testo); }
+
+/* Scacchiera dell'aiuola */
+.scacchiera { display: grid; gap: 4px; margin: 6px 0; align-items: stretch; }
+.scacchiera .intest { font-size: 0.8rem; color: var(--tenue); text-align: center; align-self: center; }
+.scacchiera .cella {
+  min-height: 40px; padding: 2px; justify-content: center; flex-direction: column; gap: 0;
+  background: var(--sfondo); color: var(--testo); border: 1px solid var(--linea); font-size: 1rem;
+}
+.scacchiera .cella.scelta { background: var(--verde); color: #fff; border-color: var(--verde); }
+.scacchiera.grande .cella { min-height: 60px; }
+.scacchiera.grande .cella.piena { background: var(--verde-chiaro); }
+.scacchiera .cella .em { font-size: 1.3rem; line-height: 1.2; }
+.scacchiera .cella .nome { font-size: 0.7rem; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.p-griglia { stroke: rgba(60, 40, 20, 0.55); }
+@media (prefers-color-scheme: dark) { .p-griglia { stroke: rgba(240, 225, 200, 0.5); } }
