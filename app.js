@@ -952,7 +952,7 @@ function moduloTrapianto(i) {
   });
 }
 
-function moduloEvento({ tipo = "raccolto", aiuolaId, impiantoId, evento } = {}) {
+function moduloEvento({ tipo = "raccolto", aiuolaId, impiantoId, evento, testo } = {}) {
   const ev = evento;
   const attivi = S.impianti.filter((x) => !x.finito || x.id === (ev?.impiantoId ?? impiantoId));
   modulo({
@@ -965,7 +965,7 @@ function moduloEvento({ tipo = "raccolto", aiuolaId, impiantoId, evento } = {}) 
         opzioni: [["", "—"], ...attivi.map((x) => [x.id, `${nomeOrtaggio(x.ortaggioId)} — ${nomeAiuolaId(x.aiuolaId)}`])],
         valore: ev?.impiantoId ?? impiantoId ?? "" },
       { id: "kg", etichetta: "Quantità raccolta in kg (solo raccolto)", tipo: "number", passo: "0.1", valore: ev?.kg },
-      { id: "testo", etichetta: "Descrizione (es. prodotto usato, osservazioni)", tipo: "textarea", valore: ev?.testo },
+      { id: "testo", etichetta: "Descrizione (es. prodotto usato, osservazioni)", tipo: "textarea", valore: ev?.testo ?? testo },
     ],
     elimina: ev ? () => {
       if (!confirm(`Eliminare questa annotazione (${TIPI_EVENTO[ev.tipo] ?? ev.tipo}, ${fmt(daISO(ev.data))})?`)) return false;
@@ -990,6 +990,125 @@ function chiudiImpianto(i) {
     ],
     testoSalva: "Chiudi coltura",
     salva: (v) => { Object.assign(i, v, { finito: true }); },
+  });
+}
+
+
+// -----------------------------------------------------------------------------
+// Aiuola vuota: togliere la pacciamatura e concimare per la prossima coltura.
+// Dosi di fondo in kg per m², secondo l'esigenza dell'ortaggio che verrà.
+// -----------------------------------------------------------------------------
+const CONCIMI = [
+  { id: "pollina", nome: "Pollina pellettata (tipo Biorex)", dose: { alta: 0.2, media: 0.15, bassa: 0.08 } },
+  { id: "stallatico", nome: "Stallatico pellettato", dose: { alta: 0.4, media: 0.3, bassa: 0.15 } },
+  { id: "letame", nome: "Letame maturo (sfuso)", dose: { alta: 4, media: 3, bassa: 1.5 } },
+];
+const GIORNI_CONCIMAZIONE = 120; // una concimazione più recente vale ancora
+function fmtKg(kg) {
+  return kg < 1 ? `${Math.round(kg * 1000 / 10) * 10} g` : `${(Math.round(kg * 10) / 10).toString().replace(".", ",")} kg`;
+}
+// L'aiuola è vuota se non c'è niente di già seminato o trapiantato (le colture in programma non contano).
+function aiuolaVuota(a) {
+  return !a.semenzaio && !impiantiAttivi(a.id).some((i) => daISO(i.data) <= oggi());
+}
+function ultimaConcimazione(a) {
+  const limite = piuGiorni(oggi(), -GIORNI_CONCIMAZIONE);
+  return S.eventi.filter((e) => e.aiuolaId === a.id && e.tipo === "concimazione" && daISO(e.data) >= limite && daISO(e.data) <= oggi())
+    .sort((x, y) => y.data.localeCompare(x.data))[0];
+}
+function consiglioAiuolaVuota(a) {
+  if (!aiuolaVuota(a)) return "";
+  const ora = oggi(), mese = ora.getMonth();
+  const prossima = impiantiAttivi(a.id).sort((x, y) => x.data.localeCompare(y.data))[0];
+  const op = prossima && PER_ID[prossima.ortaggioId];
+  const esig = op?.esig ?? "media";
+  const mq = a.larghezza && a.lunghezza ? a.larghezza * a.lunghezza : 0;
+  const fatta = ultimaConcimazione(a);
+
+  const passi = [];
+  if (a.pacciamatura === "telo") passi.push("Togli o arrotola il <b>telo di pacciamatura</b>: così puoi concimare e lavorare la terra. Rimettilo prima di piantare, tiene a bada le erbacce.");
+  if (a.pacciamatura === "organica") passi.push("Sposta ai lati <b>paglia o foglie</b> (se sono già ben decomposte puoi interrarle).");
+  if (fatta) {
+    passi.push(`Concimata il ${fmt(daISO(fatta.data))}${fatta.testo ? ` (${esc(fatta.testo)})` : ""}: per ora basta così.`);
+  } else {
+    // Stagione: d'inverno letame e stallatico (lenti); la pollina, ricca di azoto, meglio a fine inverno.
+    let quando;
+    if (mese >= 10 || mese === 0) quando = "Adesso è il momento di <b>letame maturo o stallatico</b>, che si decompongono durante l'inverno. La pollina tienila per fine febbraio–marzo, 2–3 settimane prima di seminare: d'inverno la pioggia porterebbe via il suo azoto.";
+    else if (mese <= 3) quando = "Spargi il concime <b>2–3 settimane prima</b> di seminare o trapiantare e interralo con una zappatura leggera (10–15 cm).";
+    else if (mese <= 8) quando = "Tra una coltura e l'altra basta <b>metà dose</b>, se in primavera l'aiuola era già stata concimata. Aspetta una settimana prima di piantare.";
+    else quando = "In autunno <b>letame maturo o stallatico</b>; se non semini nulla, copri la terra con pacciamatura o un sovescio.";
+    passi.push(quando);
+    const righe = CONCIMI.map((c) => `<tr><td>${c.nome}</td><td class="num">${fmtKg(c.dose[esig])}/m²</td>${mq ? `<td class="num"><b>${fmtKg(c.dose[esig] * mq)}</b></td>` : ""}</tr>`).join("");
+    passi.push(`Uno solo dei tre${op ? `, dosato per <b>${esc(op.nome.toLowerCase())}</b> (${esc(ESIGENZE[esig].split(":")[0].toLowerCase())})` : " (dose media)"}:
+      <div class="scorri"><table><tr><th>Concime</th><th class="num">Dose</th>${mq ? `<th class="num">Per ${fmtM(mq)} m²</th>` : ""}</tr>${righe}</table></div>
+      ${mq ? "" : `<span class="tenue piccolo">Metti le misure dell'aiuola (✏️ Modifica aiuola) per sapere quanti kg servono.</span>`}`);
+  }
+  return `<section class="carta consiglio-vuota"><h3 style="margin-top:0">🧺 Aiuola libera: preparala</h3>
+    <ol>${passi.map((p) => `<li>${p}</li>`).join("")}</ol>
+    <div class="riga-bottoni"><button class="piccolo" data-concima="${a.id}">＋ Segna concimazione</button></div>
+  </section>`;
+}
+// Testo proposto quando segni la concimazione.
+function testoConcimazione(a) {
+  const prossima = impiantiAttivi(a.id).sort((x, y) => x.data.localeCompare(y.data))[0];
+  const esig = PER_ID[prossima?.ortaggioId]?.esig ?? "media";
+  const mq = a.larghezza && a.lunghezza ? a.larghezza * a.lunghezza : 0;
+  return mq ? `Pollina pellettata ${fmtKg(CONCIMI[0].dose[esig] * mq)}` : "Pollina pellettata";
+}
+
+// -----------------------------------------------------------------------------
+// Malattie e parassiti: guida per sintomi (dati in data.js).
+// -----------------------------------------------------------------------------
+function problemiDi(ortaggioId) {
+  const o = PER_ID[ortaggioId];
+  return PROBLEMI.filter((p) => !ortaggioId || p.colpisce.some((c) => c === "*" || c === ortaggioId || (o && c === "fam:" + o.fam)));
+}
+function apriDiagnosi({ ortaggioId = "", aiuolaId = "", impiantoId = "" } = {}) {
+  let ortaggio = ortaggioId;
+  const scelti = new Set();
+  const corpo = () => {
+    const tutti = problemiDi(ortaggio);
+    const sintomi = Object.keys(SINTOMI).filter((k) => tutti.some((p) => p.sintomi.includes(k)));
+    for (const k of [...scelti]) if (!sintomi.includes(k)) scelti.delete(k);
+    const generico = (p) => p.colpisce.includes("*") ? 1 : 0;
+    const trovati = tutti
+      .map((p) => ({ p, n: p.sintomi.filter((k) => scelti.has(k)).length }))
+      .filter((x) => !scelti.size || x.n > 0)
+      .sort((x, y) => y.n - x.n || generico(x.p) - generico(y.p));
+    const o = PER_ID[ortaggio];
+    return `
+      <label for="d_ortaggio">Ortaggio</label>
+      <select id="d_ortaggio">${[["", "— tutti —"], ...opzioniOrtaggi().slice(1)].map(([v, t]) => `<option value="${v}" ${v === ortaggio ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>
+      <p style="margin:12px 0 4px"><b>Cosa vedi?</b> <span class="tenue piccolo">Tocca uno o più sintomi.</span></p>
+      <div class="sintomi">${sintomi.map((k) => `<button type="button" class="chip${scelti.has(k) ? " attiva" : ""}" data-sintomo="${k}">${esc(SINTOMI[k])}</button>`).join("")}</div>
+      <h3>${scelti.size ? "Può essere" : `Problemi più comuni${o ? ` ${o.emoji} ${esc(o.nome.toLowerCase())}` : ""}`}</h3>
+      ${trovati.length ? trovati.map(({ p, n }, k) => `<details class="problema" ${scelti.size && k === 0 ? "open" : ""}>
+        <summary><b>${esc(p.nome)}</b> <span class="tenue piccolo">· ${esc(p.tipo)}${scelti.size ? ` · ${n} sintom${n === 1 ? "o" : "i"} su ${scelti.size}` : ""}</span></summary>
+        <p><b>Come riconoscerlo.</b> ${esc(p.riconosci)}</p>
+        <p><b>Cosa fare.</b> ${esc(p.cura)}</p>
+        <p><b>Per prevenire.</b> ${esc(p.previeni)}</p>
+        <button type="button" class="piccolo secondario" data-tratta="${p.id}">＋ Segna nel diario</button>
+      </details>`).join("") : `<p class="tenue">Nessun problema noto con questi sintomi per questo ortaggio: prova a togliere qualche sintomo.</p>`}
+      <p class="tenue piccolo">È una guida per orientarsi, non una diagnosi sicura. Nel dubbio porta un rametto in un vivaio o al consorzio agrario. I prodotti citati sono ammessi in agricoltura biologica: usali sempre alle dosi dell'etichetta e rispetta i giorni prima della raccolta.</p>
+      <div class="riga-bottoni"><button class="secondario" data-chiudi>Chiudi</button></div>`;
+  };
+  apriFinestra(`<h2>🩺 Malattie e parassiti</h2><div id="diagnosi"></div>`, (f) => {
+    const box = f.querySelector("#diagnosi");
+    const ridisegna = () => {
+      box.innerHTML = corpo();
+      box.querySelectorAll("[data-chiudi]").forEach((b) => b.addEventListener("click", () => f.close()));
+    };
+    box.addEventListener("change", (e) => { if (e.target.id === "d_ortaggio") { ortaggio = e.target.value; ridisegna(); } });
+    box.addEventListener("click", (e) => {
+      const s = e.target.closest("[data-sintomo]");
+      if (s) { const k = s.dataset.sintomo; if (scelti.has(k)) scelti.delete(k); else scelti.add(k); ridisegna(); return; }
+      const t = e.target.closest("[data-tratta]");
+      if (t) {
+        const p = PROBLEMI.find((x) => x.id === t.dataset.tratta);
+        moduloEvento({ tipo: "trattamento", aiuolaId, impiantoId: impiantoId || undefined, testo: `${p.nome}: ` });
+      }
+    });
+    ridisegna();
   });
 }
 
@@ -1023,6 +1142,7 @@ function schedaOrtaggio(id) {
     <p class="tenue piccolo">Date calcolate per il tuo luogo (ultima brinata ${fmtMmdd(S.impostazioni.ultimaBrinata)}, prima brinata ${fmtMmdd(S.impostazioni.primaBrinata)}).</p>
     <div class="riga-bottoni">
       <button id="aggiungi">＋ Aggiungi all'orto</button>
+      <button class="secondario" id="malattie-ortaggio">🩺 Malattie</button>
       <button class="secondario" data-chiudi>Chiudi</button>
     </div>`, (f) => {
     f.querySelector("#stella").addEventListener("click", (e) => {
@@ -1031,6 +1151,7 @@ function schedaOrtaggio(id) {
       e.target.textContent = preferito(id) ? "★" : "☆";
       salva_e_ridisegna();
     });
+    f.querySelector("#malattie-ortaggio").addEventListener("click", () => apriDiagnosi({ ortaggioId: id }));
     f.querySelector("#aggiungi").addEventListener("click", () => {
       const ora = oggi();
       const inSem = finestreTra(o, "sem", ora, ora).length && !finestreTra(o, "dir", ora, ora).length && !finestreTra(o, "tra", ora, ora).length;
@@ -1187,6 +1308,11 @@ function vistaOggi() {
     <section class="carta"><h2 style="margin-top:0">Meteo dei prossimi 7 giorni</h2>${meteo}</section>
     <section class="carta">
       <h2 style="margin-top:0">Dal tuo orto</h2>${htmlPassi}
+      ${(() => {
+        const libere = aiuoleOrdinate().filter((a) => aiuolaVuota(a) && !ultimaConcimazione(a));
+        return libere.length ? `<p style="margin-bottom:4px">🧺 <b>Aiuole libere da preparare</b> (togliere la pacciamatura, concimare):</p>
+          <div>${libere.map((a) => `<a class="chip" href="#orto/${a.id}">${esc(nomeAiuola(a))}</a>`).join("")}</div>` : "";
+      })()}
     </section>
     <section class="carta">
       <h2 style="margin-top:0">Si può fare nelle prossime 3 settimane</h2>
@@ -1282,6 +1408,7 @@ function vistaOrto(idAiuola) {
       <button id="nuova-aiuola">＋ Nuova aiuola</button>
       <button class="secondario" id="piu-aiuole">＋ Più aiuole insieme</button>
       <button class="secondario" id="nuova-coltura">＋ Nuova coltura</button>
+      <button class="secondario" id="diagnosi">🩺 Malattie e parassiti</button>
     </div>`;
 }
 
@@ -1532,6 +1659,7 @@ function vistaAiuola(a) {
         ${a.semenzaio ? `<button class="piccolo" data-trapianta="${i.id}">Trapianta</button>` : `<button class="piccolo" data-raccolto="${i.id}">🧺 Raccolto</button>`}
         <button class="piccolo secondario" data-evento-imp="${i.id}">＋ Nota</button>
         <button class="piccolo secondario" data-modifica-imp="${i.id}">✏️ Modifica</button>
+        <button class="piccolo secondario" data-diagnosi-imp="${i.id}">🩺 Problema?</button>
         <button class="piccolo secondario" data-fine="${i.id}">Fine coltura</button>
       </div>
     </li>`;
@@ -1549,6 +1677,7 @@ function vistaAiuola(a) {
     ${misureAiuola(a) || tipoAiuola(a) ? `<p class="tenue">${esc([misureAiuola(a), tipoAiuola(a)].filter(Boolean).join(" · "))}</p>` : ""}
     ${a.note ? `<p>${esc(a.note)}</p>` : ""}
     ${a.semenzaio ? `<p class="tenue piccolo">Qui segni le semine al riparo (in casa, in serra, in vasetti). Quando le piantine sono pronte premi «Trapianta» e scegli l'aiuola.</p>` : ""}
+    ${consiglioAiuolaVuota(a)}
     ${htmlScacchiera(a)}
     <section class="carta"><h3 style="margin-top:0">In coltivazione</h3>${htmlAttivi}
       <div class="riga-bottoni"><button id="coltura-qui">＋ ${a.semenzaio ? "Nuova semina" : "Nuova coltura"}</button>
@@ -2080,6 +2209,9 @@ function collega(root) {
   su("[data-zona-vista]", (b) => { S.impostazioni.zonaVista = b.dataset.zonaVista; salva_e_ridisegna(); });
   su("[data-zona]", (b) => moduloZona(b.dataset.zona));
   su("#nuova-coltura", () => moduloImpianto({}));
+  su("#diagnosi", () => apriDiagnosi());
+  su("[data-diagnosi-imp]", (b) => { const i = imp(b.dataset.diagnosiImp); apriDiagnosi({ ortaggioId: i?.ortaggioId, aiuolaId: i?.aiuolaId, impiantoId: i?.id }); });
+  su("[data-concima]", (b) => { const a = aiuola(b.dataset.concima); moduloEvento({ tipo: "concimazione", aiuolaId: a.id, testo: testoConcimazione(a) }); });
   su("#nuovo-evento", () => moduloEvento({}));
 
   const { param } = rotta();

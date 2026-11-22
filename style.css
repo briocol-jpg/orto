@@ -331,3 +331,15 @@ svg.pianta a { cursor: pointer; }
 /* Promemoria delle attività in programma */
 .promemoria { border-left: 4px solid var(--avviso); }
 .chip-futuro { font-size: 0.75rem; color: var(--avviso); background: var(--avviso-sfondo); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+
+/* Aiuola libera e guida alle malattie */
+.consiglio-vuota { border-left: 4px solid var(--verde); }
+.consiglio-vuota ol { padding-left: 1.2em; margin: 0; }
+.consiglio-vuota li { margin-bottom: 8px; }
+.sintomi { display: flex; flex-wrap: wrap; gap: 6px; }
+.sintomi .chip { cursor: pointer; }
+.sintomi .chip.attiva { background: var(--verde); color: #fff; border-color: var(--verde); }
+@media (prefers-color-scheme: dark) { .sintomi .chip.attiva { color: #10180f; } }
+details.problema { border: 1px solid var(--linea); border-radius: 10px; padding: 8px 10px; margin: 8px 0; background: var(--carta); }
+details.problema summary { cursor: pointer; }
+details.problema p { margin: 8px 0; }
