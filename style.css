@@ -308,6 +308,16 @@ svg.pianta a { cursor: pointer; }
 .scacchiera.grande .cella.piena { background: var(--verde-chiaro); }
 .scacchiera .cella .em { font-size: 1.3rem; line-height: 1.2; }
 .scacchiera .cella .nome { font-size: 0.7rem; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.scacchiera .cella.angolo { outline: 3px solid var(--avviso); outline-offset: -3px; }
+.scorri-scacchiera { overflow: auto; max-height: 70vh; overscroll-behavior: contain; }
+.scacchiera.fitta { gap: 2px; width: max-content; }
+.scacchiera.fitta .cella, .scacchiera.fitta.grande .cella { min-height: 2.6em; height: 2.6em; font-size: 0.65rem; padding: 0; overflow: hidden; }
+.scacchiera.fitta .cella .em { font-size: 1rem; }
+.scacchiera.fitta .intest { background: var(--carta); position: sticky; z-index: 1; font-size: 0.7rem; }
+.scacchiera.fitta .intest.col { top: 0; }
+.scacchiera.fitta .intest.riga { left: 0; }
+.scacchiera.fitta .intest.angolo { top: 0; left: 0; z-index: 2; align-self: stretch; }
+.comandi-celle { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
 .p-griglia { stroke: rgba(60, 40, 20, 0.55); }
 @media (prefers-color-scheme: dark) { .p-griglia { stroke: rgba(240, 225, 200, 0.5); } }
 

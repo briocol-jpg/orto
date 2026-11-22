@@ -334,7 +334,7 @@ function avvisiRotazione(aiuolaId, ortaggioId, dataISO, escludiId) {
 // da sinistra a destra. Una coltura occupa delle caselle (es. ["a1", "a2"]);
 // senza caselle occupa tutta l'aiuola.
 // -----------------------------------------------------------------------------
-const MAX_RIGHE = 10, MAX_COLONNE = 12;
+const MAX_RIGHE = 100, MAX_COLONNE = 100;
 function grigliaAiuola(a) {
   return {
     righe: Math.min(MAX_RIGHE, Math.max(1, Math.round(Number(a?.righe) || 1))),
@@ -345,8 +345,36 @@ function haGriglia(a) {
   const g = grigliaAiuola(a);
   return !a?.semenzaio && g.righe * g.colonne > 1;
 }
-function nomeCella(r, c) { return String.fromCharCode(97 + r) + (c + 1); }
-function cellaRC(nome) { return { r: nome.charCodeAt(0) - 97, c: Number(nome.slice(1)) - 1 }; }
+// Righe a…z, poi aa, ab… az, ba… (come le colonne di un foglio di calcolo).
+function nomeRiga(r) {
+  let s = "";
+  for (let n = r + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(97 + ((n - 1) % 26)) + s;
+  return s;
+}
+function nomeCella(r, c) { return nomeRiga(r) + (c + 1); }
+function cellaRC(nome) {
+  const m = /^([a-z]+)(\d+)$/.exec(nome || "");
+  if (!m) return { r: -1, c: -1 };
+  let r = 0;
+  for (const ch of m[1]) r = r * 26 + ch.charCodeAt(0) - 96;
+  return { r: r - 1, c: Number(m[2]) - 1 };
+}
+// Scacchiera fitta: caselle piccole, si scorre col dito.
+function grigliaFitta(g) { return g.colonne > 8 || g.righe > 12; }
+// Misura di una casella, se l'aiuola ha le misure.
+function misuraCasella(a) {
+  if (!a?.larghezza || !a?.lunghezza) return "";
+  const g = grigliaAiuola(a);
+  const cm = (m) => `${Math.round(m * 100)}`;
+  return `caselle di ${cm(a.larghezza / g.colonne)} × ${cm(a.lunghezza / g.righe)} cm`;
+}
+function intestazioneGriglia(g) {
+  const fitta = grigliaFitta(g);
+  const larg = fitta ? "2.6em" : "minmax(0, 1fr)";
+  let h = `<div class="scacchiera${fitta ? " fitta" : ""}" style="grid-template-columns:${fitta ? "2.2em" : "1.4em"} repeat(${g.colonne}, ${larg})"><span class="intest angolo"></span>`;
+  for (let c = 0; c < g.colonne; c++) h += `<span class="intest col">${c + 1}</span>`;
+  return h;
+}
 function celleValide(a, celle) {
   const g = grigliaAiuola(a);
   return haGriglia(a) ? (celle || []).filter((x) => { const q = cellaRC(x); return q.r >= 0 && q.r < g.righe && q.c >= 0 && q.c < g.colonne; }) : [];
@@ -354,14 +382,42 @@ function celleValide(a, celle) {
 function ordinaCelle(celle) {
   return [...celle].sort((x, y) => { const p = cellaRC(x), q = cellaRC(y); return p.r - q.r || p.c - q.c; });
 }
-function testoCelle(i) { return i.celle?.length ? ordinaCelle(i.celle).join(" ") : ""; }
+// Caselle in breve: i blocchi rettangolari diventano "a1–c20" (dall'angolo in alto a sinistra a quello in basso a destra).
+function testoListaCelle(celle) {
+  const perRiga = new Map();
+  for (const n of ordinaCelle(celle)) {
+    const q = cellaRC(n);
+    if (!perRiga.has(q.r)) perRiga.set(q.r, []);
+    perRiga.get(q.r).push(q.c);
+  }
+  const blocchi = [], aperti = new Map();
+  for (const [r, cs] of perRiga) {
+    for (let i = 0; i < cs.length;) {
+      let j = i;
+      while (j + 1 < cs.length && cs[j + 1] === cs[j] + 1) j++;
+      const k = `${cs[i]}-${cs[j]}`, b = aperti.get(k);
+      if (b && b.r1 === r - 1) b.r1 = r;
+      else { const nuovo = { r0: r, r1: r, c0: cs[i], c1: cs[j] }; blocchi.push(nuovo); aperti.set(k, nuovo); }
+      i = j + 1;
+    }
+  }
+  const pezzi = blocchi.map((b) => (b.r0 === b.r1 && b.c0 === b.c1)
+    ? nomeCella(b.r0, b.c0) : `${nomeCella(b.r0, b.c0)}–${nomeCella(b.r1, b.c1)}`);
+  if (pezzi.length > 8) return `${pezzi.slice(0, 6).join(" ")} … (${celle.length} caselle)`;
+  return pezzi.join(" ") + (celle.length > 1 && pezzi.length < celle.length ? ` (${celle.length} caselle)` : "");
+}
+function testoCelle(i) { return i.celle?.length ? testoListaCelle(i.celle) : ""; }
 // Due colture sono vicine se una occupa tutta l'aiuola o se hanno caselle confinanti (anche in diagonale).
 function confinanti(c1, c2) {
   if (!c1?.length || !c2?.length) return true;
-  return c1.some((x) => c2.some((y) => {
-    const p = cellaRC(x), q = cellaRC(y);
-    return Math.abs(p.r - q.r) <= 1 && Math.abs(p.c - q.c) <= 1;
-  }));
+  const altre = new Set(c2);
+  return c1.some((x) => {
+    const p = cellaRC(x);
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+      if (p.r + dr >= 0 && p.c + dc >= 0 && altre.has(nomeCella(p.r + dr, p.c + dc))) return true;
+    }
+    return false;
+  });
 }
 // Chi occupa ogni casella dell'aiuola (colture in corso).
 function occupazione(aiuolaId, escludiId) {
@@ -387,32 +443,55 @@ function aggiornaSceltaCelle(form, aiuolaId, escludiId) {
   const scelte = new Set(celleValide(a, form.elements.celle.value.split(",").filter(Boolean)));
   form.elements.celle.value = [...scelte].join(",");
   const occ = occupazione(aiuolaId, escludiId);
-  let h = `<div class="scacchiera" style="grid-template-columns:1.4em repeat(${g.colonne}, minmax(0, 1fr))"><span></span>`;
-  for (let c = 0; c < g.colonne; c++) h += `<span class="intest">${c + 1}</span>`;
+  const rett = form.dataset.rettangolo === "1", angolo = form.dataset.angolo || "";
+  let h = `<div class="comandi-celle">
+    <div class="campo-check"><input type="checkbox" id="m_rett" ${rett ? "checked" : ""}><label for="m_rett" style="margin:0">Rettangolo: tocca due angoli</label></div>
+    <button type="button" class="piccolo" data-celle-nessuna>Nessuna casella</button></div>
+    <p class="tenue piccolo" style="margin:2px 0">${scelte.size ? `Scelte: <b>${esc(testoListaCelle([...scelte]))}</b>` : "Nessuna casella scelta: la coltura occupa tutta l'aiuola."}${angolo ? ` · Primo angolo: <b>${angolo}</b>, ora tocca l'angolo opposto.` : ""}${misuraCasella(a) ? ` · ${misuraCasella(a)}` : ""}</p>
+    <div class="scorri-scacchiera">${intestazioneGriglia(g)}`;
   for (let r = 0; r < g.righe; r++) {
-    h += `<span class="intest">${String.fromCharCode(97 + r)}</span>`;
+    h += `<span class="intest riga">${nomeRiga(r)}</span>`;
     for (let c = 0; c < g.colonne; c++) {
       const n = nomeCella(r, c);
       const chi = (occ[n] || []).map((i) => PER_ID[i.ortaggioId]?.emoji ?? "🌱").join("");
-      h += `<button type="button" class="cella${scelte.has(n) ? " scelta" : ""}" data-cella="${n}" title="${n}">${scelte.has(n) ? "✓" : chi || n}</button>`;
+      h += `<button type="button" class="cella${scelte.has(n) ? " scelta" : ""}${n === angolo ? " angolo" : ""}" data-cella="${n}" title="${n}">${scelte.has(n) ? "✓" : chi || n}</button>`;
     }
   }
-  h += `</div>`;
+  h += `</div></div>`;
+  // Ridisegnando la scacchiera, resta dove l'avevi fatta scorrere.
+  const vecchia = form.querySelector("#g_celle .scorri-scacchiera");
+  const scorri = vecchia ? [vecchia.scrollLeft, vecchia.scrollTop] : null;
   form.querySelector("#g_celle").innerHTML = h;
+  if (scorri) [form.querySelector("#g_celle .scorri-scacchiera").scrollLeft, form.querySelector("#g_celle .scorri-scacchiera").scrollTop] = scorri;
   if (!form.dataset.celleCollegate) {
     form.dataset.celleCollegate = "1";
+    const scrivi = (insieme) => {
+      form.elements.celle.value = ordinaCelle([...insieme]).join(",");
+      form.dispatchEvent(new Event("input"));
+    };
     form.querySelector("#g_celle").addEventListener("click", (e) => {
+      // Il clic arriva prima del ridisegno del modulo: qui la scelta è già aggiornata.
+      if (e.target.id === "m_rett") { form.dataset.rettangolo = e.target.checked ? "1" : ""; form.dataset.angolo = ""; return; }
+      if (e.target.closest("[data-celle-nessuna]")) { form.dataset.angolo = ""; scrivi([]); return; }
       const b = e.target.closest("[data-cella]");
       if (!b) return;
       const attuali = new Set(form.elements.celle.value.split(",").filter(Boolean));
-      if (attuali.has(b.dataset.cella)) attuali.delete(b.dataset.cella); else attuali.add(b.dataset.cella);
-      form.elements.celle.value = ordinaCelle([...attuali]).join(",");
-      form.dispatchEvent(new Event("input"));
+      const n = b.dataset.cella;
+      if (form.dataset.rettangolo === "1") {
+        if (!form.dataset.angolo) { form.dataset.angolo = n; form.dispatchEvent(new Event("input")); return; }
+        const p = cellaRC(form.dataset.angolo), q = cellaRC(n);
+        form.dataset.angolo = "";
+        for (let r = Math.min(p.r, q.r); r <= Math.max(p.r, q.r); r++) {
+          for (let c = Math.min(p.c, q.c); c <= Math.max(p.c, q.c); c++) attuali.add(nomeCella(r, c));
+        }
+      } else if (attuali.has(n)) attuali.delete(n); else attuali.add(n);
+      scrivi(attuali);
     });
   }
-  const sovrapposte = [...scelte].filter((n) => occ[n]);
+  const sovrapposte = ordinaCelle([...scelte].filter((n) => occ[n]));
+  const nomi = [...new Set(sovrapposte.flatMap((n) => occ[n].map((i) => PER_ID[i.ortaggioId]?.nome.toLowerCase() ?? "")))];
   return sovrapposte.length
-    ? `<div class="avviso">Caselle già occupate: ${sovrapposte.map((n) => `${n} (${occ[n].map((i) => esc(PER_ID[i.ortaggioId]?.nome.toLowerCase() ?? "")).join(", ")})`).join(", ")}.</div>`
+    ? `<div class="avviso">Caselle già occupate: ${esc(testoListaCelle(sovrapposte))} (${nomi.map(esc).join(", ")}).</div>`
     : "";
 }
 function campoCelle(valore) {
@@ -1184,8 +1263,9 @@ function htmlPianta(soloZona) {
         const g = grigliaAiuola(a);
         const cw = w / g.colonne, ch = h / g.righe;
         const seg = (x1, y1, x2, y2) => { const [p1, p2] = [T(x1, y1), T(x2, y2)]; return `<line class="p-griglia" x1="${p1[0]}" y1="${p1[1]}" x2="${p2[0]}" y2="${p2[1]}" stroke-width="${fs * 0.06}"/>`; };
-        for (let c = 1; c < g.colonne; c++) linee += seg(x + c * cw, 0, x + c * cw, h);
-        for (let r = 1; r < g.righe; r++) linee += seg(x, r * ch, x + w, r * ch);
+        // Linee solo se le caselle sono abbastanza grandi da vederle (almeno 5 px).
+        if (cw * scala >= 5) for (let c = 1; c < g.colonne; c++) linee += seg(x + c * cw, 0, x + c * cw, h);
+        if (ch * scala >= 5) for (let r = 1; r < g.righe; r++) linee += seg(x, r * ch, x + w, r * ch);
         const occ = occupazione(a.id);
         const libere = [];
         const dim = Math.min(e * 0.85, Math.min(cw, ch) * 0.7);
@@ -1335,20 +1415,21 @@ function htmlScacchiera(a) {
   const g = grigliaAiuola(a);
   const occ = occupazione(a.id);
   const tutta = impiantiAttivi(a.id).filter((i) => !i.celle?.length);
-  let h = `<div class="scacchiera grande" style="grid-template-columns:1.4em repeat(${g.colonne}, minmax(0, 1fr))"><span></span>`;
-  for (let c = 0; c < g.colonne; c++) h += `<span class="intest">${c + 1}</span>`;
+  const fitta = grigliaFitta(g);
+  let h = `<div class="scorri-scacchiera">${intestazioneGriglia(g).replace('class="scacchiera', 'class="scacchiera grande')}`;
   for (let r = 0; r < g.righe; r++) {
-    h += `<span class="intest">${String.fromCharCode(97 + r)}</span>`;
+    h += `<span class="intest riga">${nomeRiga(r)}</span>`;
     for (let c = 0; c < g.colonne; c++) {
       const n = nomeCella(r, c);
       const chi = occ[n] || [];
       h += chi.length
-        ? `<button type="button" class="cella piena" data-modifica-imp="${chi[0].id}" title="${n}"><span class="em">${chi.map((i) => PER_ID[i.ortaggioId]?.emoji ?? "🌱").join("")}</span><span class="nome">${esc(chi.map((i) => PER_ID[i.ortaggioId]?.nome ?? "").join(", "))}</span></button>`
+        ? `<button type="button" class="cella piena" data-modifica-imp="${chi[0].id}" title="${n} · ${esc(chi.map((i) => PER_ID[i.ortaggioId]?.nome ?? "").join(", "))}"><span class="em">${chi.map((i) => PER_ID[i.ortaggioId]?.emoji ?? "🌱").join("")}</span>${fitta ? "" : `<span class="nome">${esc(chi.map((i) => PER_ID[i.ortaggioId]?.nome ?? "").join(", "))}</span>`}</button>`
         : `<button type="button" class="cella" data-cella-nuova="${n}" title="${n}"><span class="nome tenue">${n}</span></button>`;
     }
   }
-  h += `</div>`;
-  return `<section class="carta"><h3 style="margin-top:0">Scacchiera ${g.righe} × ${g.colonne}</h3>${h}
+  h += `</div></div>`;
+  const misura = misuraCasella(a);
+  return `<section class="carta"><h3 style="margin-top:0">Scacchiera ${g.righe} × ${g.colonne}${misura ? ` <span class="tenue piccolo">· ${misura}</span>` : ""}</h3>${h}
     <p class="tenue piccolo">Righe a, b, c… dal fondo verso di te; colonne 1, 2, 3… da sinistra a destra. Tocca una casella vuota per piantarci, una piena per modificarla.
     ${tutta.length ? `Su tutta l'aiuola: ${tutta.map((i) => nomeOrtaggio(i.ortaggioId)).join(", ")}.` : ""}</p></section>`;
 }
