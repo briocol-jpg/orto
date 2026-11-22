@@ -3,7 +3,7 @@
 // le richieste ai servizi esterni (meteo, clima, terreno) vanno sempre in rete.
 // Ogni download salta la cache HTTP del browser (GitHub Pages la tiene 10
 // minuti): altrimenti una versione nuova potrebbe partire coi file vecchi.
-const VERSIONE = "orto-v13";
+const VERSIONE = "orto-v14";
 const FILE = [
   "./", "index.html", "style.css", "data.js", "app.js", "manifest.webmanifest",
   "icone/icona.svg", "icone/icona-192.png", "icone/icona-512.png",

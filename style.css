@@ -326,3 +326,7 @@ svg.pianta a { cursor: pointer; }
 .scelta-orto .chip { padding: 7px 14px; font-size: 0.95rem; border: 1px solid var(--linea); }
 .scelta-orto .chip.attiva { background: var(--verde); color: #fff; border-color: var(--verde); }
 @media (prefers-color-scheme: dark) { .scelta-orto .chip.attiva { color: #10180f; } }
+
+/* Promemoria delle attività in programma */
+.promemoria { border-left: 4px solid var(--avviso); }
+.chip-futuro { font-size: 0.75rem; color: var(--avviso); background: var(--avviso-sfondo); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }

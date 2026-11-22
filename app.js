@@ -29,6 +29,7 @@ const TIPI_EVENTO = {
 const SOGLIA_BRINATA = 2; // °C di minima dell'aria: sotto, a terra può brinare
 const ANNI_ROTAZIONE = 3;
 const ORIZZONTE = 21; // giorni guardati in "Oggi"
+const ANTICIPO_PROMEMORIA = 7; // giorni prima di un'attività segnata nel diario con una data futura
 
 const PER_ID = Object.fromEntries(ORTAGGI.map((o) => [o.id, o]));
 const ZONA_PREDEFINITA = "Orto";
@@ -1057,6 +1058,37 @@ function htmlMeteo(m) {
 // -----------------------------------------------------------------------------
 // Vista: Oggi
 // -----------------------------------------------------------------------------
+// Attività segnate nel diario con una data da oggi in poi (annotazioni e colture), entro "giorni".
+function attivitaInProgramma(giorni) {
+  const ora = oggi(), fino = piuGiorni(ora, giorni);
+  const voci = [];
+  for (const e of S.eventi) {
+    const d = daISO(e.data);
+    if (d < ora || d > fino) continue;
+    const imp = S.impianti.find((i) => i.id === e.impiantoId);
+    voci.push({
+      data: d, tipo: "ev", id: e.id,
+      titolo: `${TIPI_EVENTO[e.tipo] ?? e.tipo}${imp ? ` · ${PER_ID[imp.ortaggioId]?.nome ?? ""}` : ""}`,
+      dove: e.aiuolaId && aiuola(e.aiuolaId) ? nomeAiuolaId(e.aiuolaId) : "", testo: e.testo || "",
+    });
+  }
+  for (const i of S.impianti) {
+    const d = daISO(i.data);
+    if (i.finito || d < ora || d > fino) continue;
+    const o = PER_ID[i.ortaggioId];
+    voci.push({
+      data: d, tipo: "imp", id: i.id,
+      titolo: `${o?.emoji ?? "🌱"} ${MODI[i.modo] ?? ""} · ${o?.nome ?? ""}`,
+      dove: nomeAiuolaId(i.aiuolaId), testo: i.varieta || "",
+    });
+  }
+  return voci.sort((a, b) => a.data - b.data);
+}
+function quandoTesto(d) {
+  const n = giorniTra(oggi(), d);
+  return n === 0 ? "oggi" : n === 1 ? "domani" : `tra ${n} giorni, ${fmt(d)}`;
+}
+
 function vistaOggi() {
   const ora = oggi();
   const fino = piuGiorni(ora, ORIZZONTE);
@@ -1100,7 +1132,19 @@ function vistaOggi() {
     ? `<p class="tenue">Imposta la posizione dell'orto nella scheda <a href="#luogo">Luogo</a> per vedere le previsioni e il rischio di brinate.</p>`
     : `<div id="box-meteo"><p class="tenue">Carico le previsioni…</p></div>`;
 
-  return `
+  const programma = attivitaInProgramma(ANTICIPO_PROMEMORIA);
+  const htmlProgramma = programma.length ? `<section class="carta promemoria">
+      <h2 style="margin-top:0">🔔 Da fare nei prossimi ${ANTICIPO_PROMEMORIA} giorni</h2>
+      <ul class="elenco">${programma.map((v) => `<li><div class="riga">
+        <span><b>${esc(v.titolo)}</b> <span class="tenue">· ${quandoTesto(v.data)}</span>
+          ${v.dove || v.testo ? `<br><span class="tenue piccolo">${esc([v.dove, v.testo].filter(Boolean).join(" · "))}</span>` : ""}</span>
+        <span style="white-space:nowrap">
+          <button class="piccolo secondario" ${v.tipo === "ev" ? `data-modifica-ev="${v.id}"` : `data-modifica-imp="${v.id}"`}>✏️</button>
+          <a class="bottone secondario piccolo" style="min-height:34px;padding:4px 10px" target="_blank" rel="noopener" href="${esc(linkGoogleCalendar(v.titolo, v.data, [v.dove, v.testo].filter(Boolean).join(" · ")))}" title="Aggiungi al calendario">📅</a>
+        </span></div></li>`).join("")}</ul>
+    </section>` : "";
+
+  return `${htmlProgramma}
     <section class="carta">
       <h2 style="margin-top:0">${MESI_LUNGHI[ora.getMonth()][0].toUpperCase() + MESI_LUNGHI[ora.getMonth()].slice(1)}: lavori del mese</h2>
       <p style="margin:0">${esc(LAVORI_MESE[ora.getMonth()])}</p>
@@ -1488,6 +1532,7 @@ function htmlEventi(eventi) {
     const imp = S.impianti.find((i) => i.id === e.impiantoId);
     return `<li><div class="riga"><span><b>${TIPI_EVENTO[e.tipo] ?? e.tipo}</b>
       ${imp ? ` · ${nomeOrtaggio(imp.ortaggioId)}` : ""}${e.kg ? ` · <b>${String(e.kg).replace(".", ",")} kg</b>` : ""}
+      ${daISO(e.data) > oggi() ? ` <span class="chip-futuro">🔔 in programma</span>` : ""}
       <br><span class="tenue piccolo">${fmt(daISO(e.data))} ${e.data.slice(0, 4)}${e.aiuolaId && aiuola(e.aiuolaId) ? " · " + esc(nomeAiuolaId(e.aiuolaId)) : ""}</span>
       ${e.testo ? `<br><span class="piccolo">${esc(e.testo)}</span>` : ""}</span>
       <button class="piccolo secondario" data-modifica-ev="${e.id}">✏️ Modifica</button></div></li>`;
@@ -1502,7 +1547,8 @@ function vistaDiario() {
   const anni = new Set([String(oggi().getFullYear())]);
   for (const x of [...S.eventi, ...S.impianti]) anni.add(x.data.slice(0, 4));
   const elencoAnni = [...anni].sort().reverse();
-  const anno = annoDiario && anni.has(annoDiario) ? annoDiario : elencoAnni[0];
+  // Si apre sull'anno in corso (anche se ci sono già voci per l'anno prossimo).
+  const anno = annoDiario && anni.has(annoDiario) ? annoDiario : String(oggi().getFullYear());
 
   const eventi = S.eventi.filter((e) => e.data.startsWith(anno));
   const kg = {};
@@ -1523,6 +1569,7 @@ function vistaDiario() {
     ...S.impianti.filter((i) => i.data.startsWith(anno)).map((i) => ({
       data: i.data,
       html: `<li><div class="riga"><span><b>🌱 ${esc(MODI[i.modo] ?? "")}</b> · ${nomeOrtaggio(i.ortaggioId)}${i.varieta ? ` (${esc(i.varieta)})` : ""}
+        ${daISO(i.data) > oggi() ? ` <span class="chip-futuro">🔔 in programma</span>` : ""}
         <br><span class="tenue piccolo">${fmt(daISO(i.data))} · ${esc(nomeAiuolaId(i.aiuolaId))}${i.finito ? " · finita" : ""}</span></span>
         <button class="piccolo secondario" data-modifica-imp="${i.id}">✏️ Modifica</button></div></li>`,
     })),
@@ -1587,7 +1634,7 @@ function vistaLuogo() {
         <button class="secondario" id="importa">📂 Ripristina da file</button>
         <input type="file" id="file-importa" accept="application/json,text/plain,.json,.txt" hidden>
       </div>
-      <p class="tenue piccolo">Promemoria: scarica un file di calendario (.ics) con i trapianti e le raccolte previsti e con l'inizio delle semine dei tuoi ortaggi ★ per i prossimi 12 mesi. Aprilo con l'app Calendario o importalo in Google Calendar dal computer.</p>
+      <p class="tenue piccolo">Promemoria: scarica un file di calendario (.ics) con le attività segnate nel diario con una data futura (con un avviso una settimana prima), i trapianti e le raccolte previsti e l'inizio delle semine dei tuoi ortaggi ★ per i prossimi 12 mesi. Aprilo con l'app Calendario o importalo in Google Calendar dal computer.</p>
       <div class="riga-bottoni"><button class="secondario" id="ics">📅 Scarica promemoria (.ics)</button></div>
     </section>`;
 }
@@ -1909,6 +1956,9 @@ function esportaIcs() {
       if (s.data >= ora) voci.push({ data: s.data, titolo: `🌱 ${s.testo}`, desc: `Stima dal diario dell'orto (${nomeAiuolaId(i.aiuolaId)}).` });
     }
   }
+  for (const v of attivitaInProgramma(365)) {
+    voci.push({ data: v.data, titolo: `🔔 ${v.titolo}`, desc: [v.dove, v.testo, "Dal diario dell'orto."].filter(Boolean).join(" · "), settimanaPrima: true });
+  }
   for (const id of S.impostazioni.preferiti) {
     const o = PER_ID[id];
     for (const f of ["sem", "dir", "tra"]) {
@@ -1932,6 +1982,8 @@ function esportaIcs() {
       `DTSTART;VALUE=DATE:${d(v.data)}`, `DTEND;VALUE=DATE:${d(piuGiorni(v.data, 1))}`,
       `SUMMARY:${testoIcs(v.titolo)}`, `DESCRIPTION:${testoIcs(v.desc)}`,
       "BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${testoIcs(v.titolo)}`, "TRIGGER:PT8H", "END:VALARM",
+      // Per le attività del diario anche un avviso una settimana prima, alle 8.
+      ...(v.settimanaPrima ? ["BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${testoIcs("Tra una settimana: " + v.titolo)}`, "TRIGGER:-P6DT16H", "END:VALARM"] : []),
       "END:VEVENT");
   });
   righe.push("END:VCALENDAR");
