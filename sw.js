@@ -1,14 +1,20 @@
 // Service worker: l'app funziona anche senza rete (nell'orto).
 // I file dell'app vengono serviti dalla cache e aggiornati in background;
 // le richieste ai servizi esterni (meteo, clima, terreno) vanno sempre in rete.
-const VERSIONE = "orto-v3";
+// Ogni download salta la cache HTTP del browser (GitHub Pages la tiene 10
+// minuti): altrimenti una versione nuova potrebbe partire coi file vecchi.
+const VERSIONE = "orto-v4";
 const FILE = [
   "./", "index.html", "style.css", "data.js", "app.js", "manifest.webmanifest",
   "icone/icona.svg", "icone/icona-192.png", "icone/icona-512.png",
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(VERSIONE).then((c) => c.addAll(FILE)).then(() => self.skipWaiting()));
+  e.waitUntil(
+    caches.open(VERSIONE)
+      .then((c) => c.addAll(FILE.map((f) => new Request(f, { cache: "reload" }))))
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener("activate", (e) => {
@@ -25,7 +31,7 @@ self.addEventListener("fetch", (e) => {
   e.respondWith(
     caches.open(VERSIONE).then(async (cache) => {
       const inCache = await cache.match(e.request, { ignoreSearch: true });
-      const dallaRete = fetch(e.request)
+      const dallaRete = fetch(e.request.url, { cache: "no-cache" })
         .then((r) => { if (r.ok) cache.put(e.request, r.clone()); return r; })
         .catch(() => inCache);
       return inCache || dallaRete;
