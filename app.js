@@ -350,8 +350,11 @@ function chiudiFinestra() {
 
 // campi: [{id, etichetta, tipo, valore, opzioni:[[valore, testo]], richiesto, passo}]
 // elimina: se presente compare il bottone "Elimina"; restituisce false per annullare.
+// Ogni campo sta in <div id="w_<id>">: con nascosto: true parte nascosto e i
+// campi nascosti non sono obbligatori.
 function modulo({ titolo, campi, testoSalva = "Salva", salva, aggiorna, elimina, extra = "" }) {
-  const htmlCampi = campi.map((c) => {
+  const htmlCampi = campi.map((c) => `<div class="campo" id="w_${c.id}" ${c.nascosto ? "hidden" : ""}>${htmlCampo(c)}</div>`).join("");
+  function htmlCampo(c) {
     const req = c.richiesto ? "required" : "";
     const val = c.valore ?? "";
     if (c.tipo === "select") {
@@ -369,7 +372,7 @@ function modulo({ titolo, campi, testoSalva = "Salva", salva, aggiorna, elimina,
     const lista = c.lista ? `list="l_${c.id}"` : "";
     const datalist = c.lista ? `<datalist id="l_${c.id}">${c.lista.map((x) => `<option value="${esc(x)}">`).join("")}</datalist>` : "";
     return `<label for="m_${c.id}">${esc(c.etichetta)}</label><input id="m_${c.id}" name="${c.id}" type="${c.tipo || "text"}" value="${esc(val)}" ${passo} ${lista} ${req}>${datalist}`;
-  }).join("");
+  }
 
   apriFinestra(`
     <h2>${esc(titolo)}</h2>
@@ -405,7 +408,7 @@ function modulo({ titolo, campi, testoSalva = "Salva", salva, aggiorna, elimina,
     form.addEventListener("submit", (e) => {
       e.preventDefault();
       const v = valori();
-      const manca = campi.find((c) => c.richiesto && !v[c.id]);
+      const manca = campi.find((c) => c.richiesto && !v[c.id] && !f.querySelector(`#w_${c.id}`).hidden);
       if (manca) {
         f.querySelector("#m_avvisi").innerHTML = `<div class="pericolo">Manca: ${esc(manca.etichetta)}</div>`;
         return;
@@ -477,6 +480,43 @@ function moduloAiuola(a) {
   });
 }
 
+// "＋ Nuova aiuola…" nel campo Dove: questi campi compaiono solo se scelta.
+const NUOVA_AIUOLA = "__nuova";
+function campiNuovaAiuola() {
+  const zona = zone()[0] || ZONA_PREDEFINITA;
+  return [
+    { id: "nz_zona", etichetta: "Zona della nuova aiuola (es. Orto, Serra)", valore: zona, lista: [...new Set([...zone(), "Orto", "Serra"])], richiesto: true, nascosto: true },
+    { id: "nz_numero", etichetta: "Numero dell'aiuola (da sinistra a destra)", tipo: "number", passo: "1", valore: prossimoNumero(zona), richiesto: true, nascosto: true },
+    { id: "nz_larghezza", etichetta: "Larghezza in metri (facoltativo)", tipo: "number", passo: "0.05", nascosto: true },
+    { id: "nz_lunghezza", etichetta: "Lunghezza in metri (facoltativo)", tipo: "number", passo: "0.05", nascosto: true },
+  ];
+}
+// Mostra o nasconde i campi della nuova aiuola; restituisce un avviso se il numero è già usato.
+function aggiornaNuovaAiuola(v, form) {
+  const nuova = v.aiuolaId === NUOVA_AIUOLA;
+  for (const id of ["nz_zona", "nz_numero", "nz_larghezza", "nz_lunghezza"]) form.querySelector(`#w_${id}`).hidden = !nuova;
+  if (!nuova) return "";
+  if (form.dataset.zona !== v.nz_zona) {
+    form.dataset.zona = v.nz_zona;
+    form.elements.nz_numero.value = prossimoNumero(v.nz_zona);
+  }
+  const doppia = S.aiuole.find((x) => !x.semenzaio && (x.zona || ZONA_PREDEFINITA) === v.nz_zona && String(x.numero) === form.elements.nz_numero.value);
+  return doppia ? `<div class="avviso">C'è già l'aiuola ${esc(doppia.numero)} in «${esc(v.nz_zona)}»: scegli un altro numero, oppure sceglila dall'elenco «Dove».</div>` : "";
+}
+// Crea l'aiuola se è stata scelta "Nuova aiuola"; restituisce l'id da usare.
+function aiuolaDaModulo(v) {
+  if (v.aiuolaId !== NUOVA_AIUOLA) return v.aiuolaId;
+  const a = {
+    id: nuovoId(), zona: v.nz_zona || ZONA_PREDEFINITA, numero: Number(v.nz_numero) || prossimoNumero(v.nz_zona), nome: "", note: "",
+    larghezza: numeroMisura(v.nz_larghezza), lunghezza: numeroMisura(v.nz_lunghezza),
+  };
+  S.aiuole.push(a);
+  return a.id;
+}
+function togliCampiNuovaAiuola(v) {
+  for (const k of ["nz_zona", "nz_numero", "nz_larghezza", "nz_lunghezza"]) delete v[k];
+}
+
 // Modo più probabile per un ortaggio: a terra se si può, altrimenti trapianto.
 function modoPredefinito(ortaggioId, aiuolaId) {
   if (aiuola(aiuolaId)?.semenzaio) return "sem";
@@ -487,12 +527,15 @@ function modoPredefinito(ortaggioId, aiuolaId) {
 function moduloImpianto({ aiuolaId, ortaggioId, impianto } = {}) {
   const i = impianto;
   let ultimoOrtaggio = i?.ortaggioId ?? ortaggioId ?? "";
-  const aiuolaIniziale = i?.aiuolaId ?? aiuolaId ?? S.aiuole[0].id;
+  // Proposta: la prima aiuola vera; se non ce ne sono, "Nuova aiuola".
+  const aiuolaIniziale = i?.aiuolaId ?? aiuolaId ?? aiuoleOrdinate().find((a) => !a.semenzaio)?.id ?? NUOVA_AIUOLA;
+  let ultimaAiuola = aiuolaIniziale;
   modulo({
     titolo: i ? "Modifica coltura" : "Nuova coltura",
     campi: [
       { id: "ortaggioId", etichetta: "Ortaggio", tipo: "select", opzioni: opzioniOrtaggi(), valore: i?.ortaggioId ?? ortaggioId ?? "", richiesto: true },
-      { id: "aiuolaId", etichetta: "Dove", tipo: "select", opzioni: opzioniAiuole(), valore: aiuolaIniziale, richiesto: true },
+      { id: "aiuolaId", etichetta: "Dove (aiuola)", tipo: "select", opzioni: [...opzioniAiuole(), [NUOVA_AIUOLA, "＋ Nuova aiuola…"]], valore: aiuolaIniziale, richiesto: true },
+      ...campiNuovaAiuola(),
       { id: "modo", etichetta: "Come", tipo: "select", opzioni: Object.entries(MODI), valore: i?.modo ?? modoPredefinito(ultimoOrtaggio, aiuolaIniziale) },
       { id: "data", etichetta: "Data", tipo: "date", valore: i?.data ?? aISO(oggi()), richiesto: true },
       { id: "varieta", etichetta: "Varietà (facoltativo)", valore: i?.varieta },
@@ -503,13 +546,19 @@ function moduloImpianto({ aiuolaId, ortaggioId, impianto } = {}) {
     elimina: i ? () => eliminaImpianto(i) : null,
     aggiorna: (v, form) => {
       if (aiuola(v.aiuolaId)?.semenzaio && v.modo !== "sem") form.elements.modo.value = "sem";
-      if (v.ortaggioId !== ultimoOrtaggio) {
+      if (v.ortaggioId !== ultimoOrtaggio || v.aiuolaId !== ultimaAiuola) {
+        // Cambiato ortaggio o aiuola: ripropongo il modo (semenzaio, a terra, trapianto).
+        if (v.ortaggioId !== ultimoOrtaggio || aiuola(ultimaAiuola)?.semenzaio || aiuola(v.aiuolaId)?.semenzaio) {
+          form.elements.modo.value = modoPredefinito(v.ortaggioId, v.aiuolaId);
+        }
         ultimoOrtaggio = v.ortaggioId;
-        form.elements.modo.value = modoPredefinito(v.ortaggioId, v.aiuolaId);
+        ultimaAiuola = v.aiuolaId;
       }
-      return htmlAvvisi(v.aiuolaId, v.ortaggioId, v.data, i?.id);
+      return aggiornaNuovaAiuola(v, form) + htmlAvvisi(v.aiuolaId, v.ortaggioId, v.data, i?.id);
     },
     salva: (v) => {
+      v.aiuolaId = aiuolaDaModulo(v);
+      togliCampiNuovaAiuola(v);
       if (aiuola(v.aiuolaId)?.semenzaio) v.modo = "sem";
       if (i) {
         // Riaperta: non è più finita, via esito e data di fine.
@@ -543,15 +592,16 @@ function moduloTrapianto(i) {
   modulo({
     titolo: `Trapianta ${o.nome.toLowerCase()}`,
     campi: [
-      { id: "aiuolaId", etichetta: "In quale aiuola", tipo: "select", opzioni: opzioniAiuole(false), richiesto: true },
+      { id: "aiuolaId", etichetta: "In quale aiuola", tipo: "select", opzioni: [...opzioniAiuole(false), [NUOVA_AIUOLA, "＋ Nuova aiuola…"]], richiesto: true },
+      ...campiNuovaAiuola(),
       { id: "data", etichetta: "Data del trapianto", tipo: "date", valore: aISO(oggi()), richiesto: true },
       { id: "quantita", etichetta: "Quante piantine", valore: i.quantita },
     ],
     testoSalva: "Trapianta",
-    aggiorna: (v) => htmlAvvisi(v.aiuolaId, i.ortaggioId, v.data, null)
-      + (S.aiuole.filter((a) => !a.semenzaio).length ? "" : `<div class="avviso">Crea prima un'aiuola nella scheda Orto.</div>`),
+    aggiorna: (v, form) => aggiornaNuovaAiuola(v, form) + htmlAvvisi(v.aiuolaId, i.ortaggioId, v.data, null),
     salva: (v) => {
       if (!v.aiuolaId) return false;
+      v.aiuolaId = aiuolaDaModulo(v);
       i.finito = true;
       i.dataFine = v.data;
       i.esito = "trapiantato";
