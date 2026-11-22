@@ -310,3 +310,9 @@ svg.pianta a { cursor: pointer; }
 .scacchiera .cella .nome { font-size: 0.7rem; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .p-griglia { stroke: rgba(60, 40, 20, 0.55); }
 @media (prefers-color-scheme: dark) { .p-griglia { stroke: rgba(240, 225, 200, 0.5); } }
+
+/* Bottoni per scegliere l'orto */
+.scelta-orto { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.scelta-orto .chip { padding: 7px 14px; font-size: 0.95rem; border: 1px solid var(--linea); }
+.scelta-orto .chip.attiva { background: var(--verde); color: #fff; border-color: var(--verde); }
+@media (prefers-color-scheme: dark) { .scelta-orto .chip.attiva { color: #10180f; } }

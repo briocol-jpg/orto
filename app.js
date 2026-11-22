@@ -231,6 +231,11 @@ function aiuoleOrdinate() {
     || z.indexOf(x.zona || ZONA_PREDEFINITA) - z.indexOf(y.zona || ZONA_PREDEFINITA)
     || (Number(x.numero) || 0) - (Number(y.numero) || 0));
 }
+// Orto scelto coi bottoni in cima alla scheda Orto ("" = tutti).
+function zonaScelta() {
+  const z = S.impostazioni.zonaVista;
+  return z && zone().includes(z) ? z : "";
+}
 function nomeAiuola(a) {
   if (!a) return "";
   if (a.semenzaio) return a.nome;
@@ -557,7 +562,7 @@ function moduloAiuola(a) {
     });
     return;
   }
-  const zonaIniziale = a?.zona || zone()[0] || ZONA_PREDEFINITA;
+  const zonaIniziale = a?.zona || zonaScelta() || zone()[0] || ZONA_PREDEFINITA;
   modulo({
     titolo: a ? "Modifica aiuola" : "Nuova aiuola",
     campi: [
@@ -601,7 +606,7 @@ function moduloAiuola(a) {
 
 // Crea in un colpo solo più aiuole uguali, numerate di seguito.
 function moduloPiuAiuole() {
-  const zonaIniziale = zone()[0] || ZONA_PREDEFINITA;
+  const zonaIniziale = zonaScelta() || zone()[0] || ZONA_PREDEFINITA;
   modulo({
     titolo: "Più aiuole insieme",
     campi: [
@@ -674,6 +679,7 @@ function moduloZona(zona) {
       if (v.nome !== zona) {
         for (const a of S.aiuole) if (!a.semenzaio && (a.zona || ZONA_PREDEFINITA) === zona) a.zona = v.nome;
         delete S.zone[zona];
+        if (S.impostazioni.zonaVista === zona) S.impostazioni.zonaVista = v.nome;
       }
       S.zone[v.nome] = dati;
     },
@@ -683,7 +689,7 @@ function moduloZona(zona) {
 // "＋ Nuova aiuola…" nel campo Dove: questi campi compaiono solo se scelta.
 const NUOVA_AIUOLA = "__nuova";
 function campiNuovaAiuola() {
-  const zona = zone()[0] || ZONA_PREDEFINITA;
+  const zona = zonaScelta() || zone()[0] || ZONA_PREDEFINITA;
   return [
     { id: "nz_zona", etichetta: "Zona della nuova aiuola (es. Orto, Serra)", valore: zona, lista: [...new Set([...zone(), "Orto", "Serra"])], richiesto: true, nascosto: true },
     { id: "nz_numero", etichetta: "Numero dell'aiuola (da sinistra a destra)", tipo: "number", passo: "1", valore: prossimoNumero(zona), richiesto: true, nascosto: true },
@@ -1086,7 +1092,10 @@ function vistaCalendario() {
 // -----------------------------------------------------------------------------
 function vistaOrto(idAiuola) {
   if (idAiuola && aiuola(idAiuola)) return vistaAiuola(aiuola(idAiuola));
-  const carte = aiuoleOrdinate().map((a) => {
+  const scelta = zonaScelta();
+  const bottoni = zone().length > 1 ? `<div class="scelta-orto">${[["", "Tutti"], ...zone().map((z) => [z, z])].map(([z, t]) =>
+    `<button class="chip${z === scelta ? " attiva" : ""}" data-zona-vista="${esc(z)}">${esc(t)}</button>`).join("")}</div>` : "";
+  const carte = aiuoleOrdinate().filter((a) => a.semenzaio || !scelta || (a.zona || ZONA_PREDEFINITA) === scelta).map((a) => {
     const attivi = impiantiAttivi(a.id);
     const problemi = attivi.reduce((n, i) => n + avvisiRotazione(a.id, i.ortaggioId, i.data, i.id).length
       + avvisiVicini(a.id, i.ortaggioId, i.id, i.celle).cattivi.length, 0);
@@ -1098,8 +1107,9 @@ function vistaOrto(idAiuola) {
     </a>`;
   }).join("");
   return `
-    <h2>Le mie aiuole</h2>
-    ${htmlPianta()}
+    <h2>${scelta ? esc(scelta) : "Le mie aiuole"}</h2>
+    ${bottoni}
+    ${htmlPianta(scelta)}
     ${S.aiuole.length <= 1 ? `<p class="tenue">Crea un'aiuola per ogni pezzo dell'orto: l'app ricorda cosa ci hai coltivato ogni anno e ti avvisa se ripeti la stessa famiglia (rotazione) o metti vicini ortaggi che non vanno d'accordo.</p>` : ""}
     ${carte}
     <div class="riga-bottoni">
@@ -1111,8 +1121,8 @@ function vistaOrto(idAiuola) {
 
 // Pianta vista dall'alto: per ogni zona le aiuole affiancate da sinistra a
 // destra in ordine di numero, in scala, con le colture in corso.
-function htmlPianta() {
-  const blocchi = zone().map((zona) => {
+function htmlPianta(soloZona) {
+  const blocchi = zone().filter((z) => !soloZona || z === soloZona).map((zona) => {
     const lista = aiuoleOrdinate().filter((a) => !a.semenzaio && (a.zona || ZONA_PREDEFINITA) === zona);
     if (!lista.length) return "";
     const misurate = lista.filter((a) => a.larghezza && a.lunghezza);
@@ -1878,6 +1888,7 @@ function collega(root) {
   su("[data-modifica-ev]", (b) => moduloEvento({ evento: S.eventi.find((e) => e.id === b.dataset.modificaEv) }));
   su("#nuova-aiuola", () => moduloAiuola());
   su("#piu-aiuole", () => moduloPiuAiuole());
+  su("[data-zona-vista]", (b) => { S.impostazioni.zonaVista = b.dataset.zonaVista; salva_e_ridisegna(); });
   su("[data-zona]", (b) => moduloZona(b.dataset.zona));
   su("#nuova-coltura", () => moduloImpianto({}));
   su("#nuovo-evento", () => moduloEvento({}));
