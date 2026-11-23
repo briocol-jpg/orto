@@ -3,7 +3,7 @@
 // le richieste ai servizi esterni (meteo, clima, terreno) vanno sempre in rete.
 // Ogni download salta la cache HTTP del browser (GitHub Pages la tiene 10
 // minuti): altrimenti una versione nuova potrebbe partire coi file vecchi.
-const VERSIONE = "orto-v21";
+const VERSIONE = "orto-v22";
 // Modello delle malattie e motore (~17 MB): cache a parte, che non si svuota a
 // ogni versione; si riempie al primo uso del riconoscimento da foto.
 const MODELLO = "orto-modello-v1";

@@ -537,7 +537,9 @@ function htmlAvvisi(aiuolaId, ortaggioId, dataISO, escludiId, celle) {
 // -----------------------------------------------------------------------------
 function apriFinestra(html, dopo) {
   const f = el("finestra");
-  f.innerHTML = `<div class="contenuto">${html}</div>`;
+  // La finestra parte con il fuoco sul contenitore e non sul primo campo:
+  // su iPad un menu a tendina col fuoco si apre da solo.
+  f.innerHTML = `<div class="contenuto" tabindex="-1" autofocus>${html}</div>`;
   f.querySelectorAll("[data-chiudi]").forEach((b) => b.addEventListener("click", () => f.close()));
   if (dopo) dopo(f);
   if (!f.open) f.showModal();

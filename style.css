@@ -238,7 +238,7 @@ dialog {
 dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
 /* Un solo contenitore che scorre (il dialog): su iPad i menu a tendina dentro
    contenitori annidati che scorrono a volte non si aprono. */
-dialog .contenuto { padding: 16px; }
+dialog .contenuto { padding: 16px; outline: none; }
 /* Salva e Annulla sempre visibili in fondo alla finestra. */
 dialog #modulo > .riga-bottoni { position: sticky; bottom: 0; z-index: 3; background: var(--carta);
   margin: 10px -16px -16px; padding: 10px 16px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--linea); }
