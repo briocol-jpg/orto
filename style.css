@@ -362,3 +362,6 @@ details.problema p { margin: 8px 0; }
 .riconosci-esito { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
 .riconosci-esito img { width: 96px; height: 96px; border-radius: 8px; flex: none; }
 .riconosci-esito p { margin: 0; }
+/* Colture degli anni passati: nomi toccabili (aprono Modifica). */
+button.voce-storico { background: none; border: none; padding: 0; margin: 0; width: auto; font: inherit; color: inherit;
+  text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer; min-height: 0; display: inline; border-radius: 0; }

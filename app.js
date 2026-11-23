@@ -1670,7 +1670,7 @@ function vistaAiuola(a) {
   const perAnno = {};
   for (const i of storici) (perAnno[i.data.slice(0, 4)] ??= []).push(i);
   const htmlStorici = Object.keys(perAnno).length ? Object.entries(perAnno).sort((x, y) => y[0].localeCompare(x[0])).map(([anno, l]) =>
-    `<p><b>${anno}:</b> ${l.map((i) => `${nomeOrtaggio(i.ortaggioId)}${i.esito === "fallito" ? " ✗" : ""}${i.commento ? ` <span class="tenue">(${esc(i.commento)})</span>` : ""}`).join(", ")}</p>`).join("")
+    `<p><b>${anno}:</b> ${l.map((i) => `<button type="button" class="voce-storico" data-modifica-imp="${i.id}" title="Tocca per modificare o eliminare">${nomeOrtaggio(i.ortaggioId)}${i.esito === "fallito" ? " ✗" : ""}</button>${i.commento ? ` <span class="tenue">(${esc(i.commento)})</span>` : ""}`).join(", ")}</p>`).join("") + `<p class="tenue piccolo">Tocca un ortaggio per modificarlo o eliminarlo.</p>`
     : `<p class="tenue">Ancora niente: qui comparirà cosa hai coltivato negli anni passati.</p>`;
 
   return `
