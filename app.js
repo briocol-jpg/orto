@@ -208,6 +208,11 @@ function esc(s) {
 function el(id) { return document.getElementById(id); }
 function nomeOrtaggio(id) {
   const o = PER_ID[id];
+  return o ? `${icona(o)} ${o.nome}` : id;
+}
+// Per i menu a tendina e i testi semplici: solo emoji (le icone disegnate sono HTML).
+function nomeOrtaggioTesto(id) {
+  const o = PER_ID[id];
   return o ? `${o.emoji} ${o.nome}` : id;
 }
 function aiuola(id) { return S.aiuole.find((a) => a.id === id); }
@@ -456,7 +461,7 @@ function aggiornaSceltaCelle(form, aiuolaId, escludiId) {
     h += `<span class="intest riga">${nomeRiga(r)}</span>`;
     for (let c = 0; c < g.colonne; c++) {
       const n = nomeCella(r, c);
-      const chi = (occ[n] || []).map((i) => PER_ID[i.ortaggioId]?.emoji ?? "🌱").join("");
+      const chi = (occ[n] || []).map((i) => icona(PER_ID[i.ortaggioId])).join("");
       h += `<button type="button" class="cella${scelte.has(n) ? " scelta" : ""}${n === angolo ? " angolo" : ""}" data-cella="${n}" title="${n}">${scelte.has(n) ? "✓" : chi || n}</button>`;
     }
   }
@@ -964,7 +969,7 @@ function moduloEvento({ tipo = "raccolto", aiuolaId, impiantoId, evento, testo }
       { id: "data", etichetta: "Data", tipo: "date", valore: ev?.data ?? aISO(oggi()), richiesto: true },
       { id: "aiuolaId", etichetta: "Aiuola (facoltativo)", tipo: "select", opzioni: [["", "— tutto l'orto —"], ...opzioniAiuole()], valore: ev?.aiuolaId ?? aiuolaId ?? "" },
       { id: "impiantoId", etichetta: "Coltura (facoltativo)", tipo: "select",
-        opzioni: [["", "—"], ...attivi.map((x) => [x.id, `${nomeOrtaggio(x.ortaggioId)} — ${nomeAiuolaId(x.aiuolaId)}`])],
+        opzioni: [["", "—"], ...attivi.map((x) => [x.id, `${nomeOrtaggioTesto(x.ortaggioId)} — ${nomeAiuolaId(x.aiuolaId)}`])],
         valore: ev?.impiantoId ?? impiantoId ?? "" },
       { id: "kg", etichetta: "Quantità raccolta in kg (solo raccolto)", tipo: "number", passo: "0.1", valore: ev?.kg },
       { id: "testo", etichetta: "Descrizione (es. prodotto usato, osservazioni)", tipo: "textarea", valore: ev?.testo ?? testo },
@@ -1083,7 +1088,7 @@ function apriDiagnosi({ ortaggioId = "", aiuolaId = "", impiantoId = "" } = {}) 
       <select id="d_ortaggio">${[["", "— tutti —"], ...opzioniOrtaggi().slice(1)].map(([v, t]) => `<option value="${v}" ${v === ortaggio ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>
       <p style="margin:12px 0 4px"><b>Cosa vedi?</b> <span class="tenue piccolo">Tocca uno o più sintomi.</span></p>
       <div class="sintomi">${sintomi.map((k) => `<button type="button" class="chip${scelti.has(k) ? " attiva" : ""}" data-sintomo="${k}">${esc(SINTOMI[k])}</button>`).join("")}</div>
-      <h3>${scelti.size ? "Può essere" : `Problemi più comuni${o ? ` ${o.emoji} ${esc(o.nome.toLowerCase())}` : ""}`}</h3>
+      <h3>${scelti.size ? "Può essere" : `Problemi più comuni${o ? ` ${icona(o)} ${esc(o.nome.toLowerCase())}` : ""}`}</h3>
       ${trovati.length ? trovati.map(({ p, n }, k) => `<details class="problema" ${scelti.size && k === 0 ? "open" : ""}>
         <summary><b>${esc(p.nome)}</b> <span class="tenue piccolo">· ${esc(p.tipo)}${scelti.size ? ` · ${n} sintom${n === 1 ? "o" : "i"} su ${scelti.size}` : ""}</span></summary>
         <p><b>Come riconoscerlo.</b> ${esc(p.riconosci)}</p>
@@ -1131,7 +1136,7 @@ function schedaOrtaggio(id) {
   const nemici = nemiciDi(id).map((x) => PER_ID[x].nome.toLowerCase());
   apriFinestra(`
     <div class="riga" style="display:flex;justify-content:space-between;align-items:center">
-      <h2>${o.emoji} ${esc(o.nome)}</h2>
+      <h2>${icona(o)} ${esc(o.nome)}</h2>
       <button class="stella" id="stella" aria-label="Preferito">${preferito(id) ? "★" : "☆"}</button>
     </div>
     <p class="tenue">${esc(FAMIGLIE[o.fam])} · ${esc(ESIGENZE[o.esig])}</p>
@@ -1238,7 +1243,7 @@ function attivitaInProgramma(giorni) {
     const o = PER_ID[i.ortaggioId];
     voci.push({
       data: d, tipo: "imp", id: i.id,
-      titolo: `${o?.emoji ?? "🌱"} ${MODI[i.modo] ?? ""} · ${o?.nome ?? ""}`,
+      titolo: `${MODI[i.modo] ?? ""} · ${o?.nome ?? ""}`, ico: icona(o),
       dove: nomeAiuolaId(i.aiuolaId), testo: i.varieta || "",
     });
   }
@@ -1263,7 +1268,7 @@ function vistaOggi() {
       if (!fin.length) continue;
       const w = fin[0];
       const quando = w.inizio > ora ? `dal ${fmt(w.inizio)}` : `fino al ${fmt(w.fine)}`;
-      voci.push(`<button class="chip" data-ortaggio="${o.id}">${preferito(o.id) ? "★ " : ""}${o.emoji} ${esc(o.nome)} <span class="tenue">${quando}</span></button>`);
+      voci.push(`<button class="chip" data-ortaggio="${o.id}">${preferito(o.id) ? "★ " : ""}${icona(o)} ${esc(o.nome)} <span class="tenue">${quando}</span></button>`);
     }
     if (!voci.length) return "";
     return `<h3>${FASI[f].nome}</h3><div>${voci.join("")}</div>`;
@@ -1280,7 +1285,7 @@ function vistaOggi() {
   passi.sort((a, b) => a.s.data - b.s.data);
   const htmlPassi = passi.length ? `<ul class="elenco">${passi.map(({ i, s, dd }) => `
     <li><div class="riga">
-      <span>${PER_ID[i.ortaggioId].emoji} <b>${esc(s.testo)}</b> <span class="tenue">· ${esc(nomeAiuolaId(i.aiuolaId))}</span><br>
+      <span>${icona(PER_ID[i.ortaggioId])} <b>${esc(s.testo)}</b> <span class="tenue">· ${esc(nomeAiuolaId(i.aiuolaId))}</span><br>
       <span class="tenue piccolo">${dd < 0 ? `previsto ${-dd} giorni fa` : dd === 0 ? "previsto oggi" : `verso il ${fmt(s.data)}`} (stima)</span></span>
       <span>
         ${s.tipo === "tra" ? `<button class="piccolo" data-trapianta="${i.id}">Trapianta</button>` : `<button class="piccolo" data-raccolto="${i.id}">Raccolto</button>`}
@@ -1296,7 +1301,7 @@ function vistaOggi() {
   const htmlProgramma = programma.length ? `<section class="carta promemoria">
       <h2 style="margin-top:0">🔔 Da fare nei prossimi ${ANTICIPO_PROMEMORIA} giorni</h2>
       <ul class="elenco">${programma.map((v) => `<li><div class="riga">
-        <span><b>${esc(v.titolo)}</b> <span class="tenue">· ${quandoTesto(v.data)}</span>
+        <span><b>${v.ico ? v.ico + " " : ""}${esc(v.titolo)}</b> <span class="tenue">· ${quandoTesto(v.data)}</span>
           ${v.dove || v.testo ? `<br><span class="tenue piccolo">${esc([v.dove, v.testo].filter(Boolean).join(" · "))}</span>` : ""}</span>
         <span style="white-space:nowrap">
           <button class="piccolo secondario" ${v.tipo === "ev" ? `data-modifica-ev="${v.id}"` : `data-modifica-imp="${v.id}"`}>✏️</button>
@@ -1363,7 +1368,7 @@ function vistaCalendario() {
       }
     }
     return `<div class="cal-riga" data-ortaggio="${o.id}">
-      <div class="nome">${preferito(o.id) ? "★ " : ""}${o.emoji} ${esc(o.nome)}</div>
+      <div class="nome">${preferito(o.id) ? "★ " : ""}${icona(o)} ${esc(o.nome)}</div>
       <div class="cal-barre">${barre}<div class="oggi" style="left:${pos(ora)}%"></div></div>
     </div>`;
   }).join("");
@@ -1453,6 +1458,8 @@ function htmlPianta(soloZona) {
       const [tx, ty] = T(px, py);
       return `<text class="${classe}" x="${tx}" y="${ty}" font-size="${size}" text-anchor="middle" dominant-baseline="central">${contenuto}</text>`;
     };
+    // Icona di un ortaggio in un punto dell'aiuola (le coordinate ruotano con la zona).
+    const iconaPianta = (px, py, o, lato) => { const [tx, ty] = T(px, py); return iconaSvg(o, tx, ty, lato); };
     const punti = (l) => l.map(([px, py]) => `${px},${py}`).join(" ");
 
     const etichette = [];
@@ -1463,7 +1470,7 @@ function htmlPianta(soloZona) {
       const e = fs * 1.25; // lato di un'emoji
       const perRiga = Math.max(1, Math.floor((w - fs * 0.3) / e));
       const righe = Math.max(0, Math.floor((h - fs * 2.2) / e));
-      const tutte = attivi.map((i) => PER_ID[i.ortaggioId]?.emoji ?? "🌱");
+      const tutte = attivi.map((i) => PER_ID[i.ortaggioId]);
       const posti = perRiga * righe;
       const emoji = tutte.length > posti ? [...tutte.slice(0, Math.max(0, posti - 1)), `+${tutte.length - Math.max(0, posti - 1)}`] : tutte;
       const cx = x + w / 2;
@@ -1482,19 +1489,21 @@ function htmlPianta(soloZona) {
         const dim = Math.min(e * 0.85, Math.min(cw, ch) * 0.7);
         for (let r = 0; r < g.righe; r++) for (let c = 0; c < g.colonne; c++) {
           const n = nomeCella(r, c);
-          if (occ[n]) testi += testo(x + (c + 0.5) * cw, (r + 0.5) * ch, PER_ID[occ[n][0].ortaggioId]?.emoji ?? "🌱", "p-emoji", dim);
+          if (occ[n]) testi += iconaPianta(x + (c + 0.5) * cw, (r + 0.5) * ch, PER_ID[occ[n][0].ortaggioId], dim);
           else libere.push([r, c]);
         }
         // Colture su tutta l'aiuola: nelle caselle libere.
         impiantiAttivi(a.id).filter((i) => !i.celle?.length).forEach((i, k) => {
           if (!libere[k]) return;
           const [r, c] = libere[k];
-          testi += testo(x + (c + 0.5) * cw, (r + 0.5) * ch, PER_ID[i.ortaggioId]?.emoji ?? "🌱", "p-emoji", dim);
+          testi += iconaPianta(x + (c + 0.5) * cw, (r + 0.5) * ch, PER_ID[i.ortaggioId], dim);
         });
       } else {
-        testi = (posti ? emoji : []).map((em, k) => testo(
-          cx + ((k % perRiga) - (Math.min(perRiga, emoji.length) - 1) / 2) * e,
-          fs * 2.3 + Math.floor(k / perRiga) * e + e * 0.5, em, "p-emoji", e * 0.85)).join("");
+        testi = (posti ? emoji : []).map((em, k) => {
+          const px = cx + ((k % perRiga) - (Math.min(perRiga, emoji.length) - 1) / 2) * e;
+          const py = fs * 2.3 + Math.floor(k / perRiga) * e + e * 0.5;
+          return typeof em === "string" ? testo(px, py, em, "p-emoji", e * 0.85) : iconaPianta(px, py, em, e * 0.85);
+        }).join("");
       }
       // Con la scacchiera il numero va fuori, oltre il fondo, per non coprire le caselle.
       const yNumero = griglia ? -fs * 0.9 : fs * 1.1;
@@ -1616,7 +1625,7 @@ function suggerimentiAiuola(a) {
   cand.sort((x, y) => y.punti - x.punti || x.o.nome.localeCompare(y.o.nome, "it"));
   return `<section class="carta"><h3 style="margin-top:0">Cosa potresti mettere qui adesso</h3>
     <p class="tenue piccolo">Ortaggi di stagione${margine ? " (in serra con 3 settimane di margine)" : ""} che rispettano la rotazione e vanno d'accordo con quelli già presenti.</p>
-    ${cand.slice(0, 10).map(({ o }) => `<button class="chip" data-ortaggio="${o.id}">${o.emoji} ${esc(o.nome)}</button>`).join("")}
+    ${cand.slice(0, 10).map(({ o }) => `<button class="chip" data-ortaggio="${o.id}">${icona(o)} ${esc(o.nome)}</button>`).join("")}
   </section>`;
 }
 
@@ -1634,7 +1643,7 @@ function htmlScacchiera(a) {
       const n = nomeCella(r, c);
       const chi = occ[n] || [];
       h += chi.length
-        ? `<button type="button" class="cella piena" data-modifica-imp="${chi[0].id}" title="${n} · ${esc(chi.map((i) => PER_ID[i.ortaggioId]?.nome ?? "").join(", "))}"><span class="em">${chi.map((i) => PER_ID[i.ortaggioId]?.emoji ?? "🌱").join("")}</span>${fitta ? "" : `<span class="nome">${esc(chi.map((i) => PER_ID[i.ortaggioId]?.nome ?? "").join(", "))}</span>`}</button>`
+        ? `<button type="button" class="cella piena" data-modifica-imp="${chi[0].id}" title="${n} · ${esc(chi.map((i) => PER_ID[i.ortaggioId]?.nome ?? "").join(", "))}"><span class="em">${chi.map((i) => icona(PER_ID[i.ortaggioId])).join("")}</span>${fitta ? "" : `<span class="nome">${esc(chi.map((i) => PER_ID[i.ortaggioId]?.nome ?? "").join(", "))}</span>`}</button>`
         : `<button type="button" class="cella" data-cella-nuova="${n}" title="${n}"><span class="nome tenue">${n}</span></button>`;
     }
   }
@@ -1655,7 +1664,7 @@ function vistaAiuola(a) {
     const stime = stimeImpianto(i).map((s) => `${FASI[s.tipo].breve} ~${fmt(s.data)}`).join(" · ");
     const avv = htmlAvvisi(a.id, i.ortaggioId, i.data, i.id, i.celle).replace(/<div class="avviso">📅[^<]*<\/div>/, "");
     return `<li>
-      <div><b>${o.emoji} ${esc(o.nome)}</b>${i.varieta ? ` <span class="tenue">${esc(i.varieta)}</span>` : ""}${i.celle?.length ? ` · <b>${esc(testoCelle(i))}</b>` : ""}</div>
+      <div><b>${icona(o)} ${esc(o.nome)}</b>${i.varieta ? ` <span class="tenue">${esc(i.varieta)}</span>` : ""}${i.celle?.length ? ` · <b>${esc(testoCelle(i))}</b>` : ""}</div>
       <div class="tenue piccolo">${esc(MODI[i.modo] ?? "")} il ${fmt(daISO(i.data))}${i.quantita ? " · " + esc(i.quantita) : ""}${stime ? " · previsti: " + stime : ""}</div>
       ${i.note ? `<div class="piccolo">${esc(i.note)}</div>` : ""}
       ${avv}

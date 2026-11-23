@@ -365,3 +365,6 @@ details.problema p { margin: 8px 0; }
 /* Colture degli anni passati: nomi toccabili (aprono Modifica). */
 button.voce-storico { background: none; border: none; padding: 0; margin: 0; width: auto; font: inherit; color: inherit;
   text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer; min-height: 0; display: inline; border-radius: 0; }
+/* Icone disegnate degli ortaggi (icone.js), grandi come un'emoji. */
+svg.ico { width: 1.25em; height: 1.25em; vertical-align: -0.28em; display: inline-block; flex-shrink: 0; }
+.scacchiera .cella .em svg.ico { width: 1.1em; height: 1.1em; }
