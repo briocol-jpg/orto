@@ -55,16 +55,15 @@ async function modelloMalattie() {
 }
 
 // Come Ultralytics: lato corto a 224 px, ritaglio centrale 224×224, valori 0–1.
-async function tensoreDaFoto(file) {
-  const img = await createImageBitmap(file, { imageOrientation: "from-image" });
-  const lato = Math.min(img.width, img.height);
+// "sorgente" è una foto (ImageBitmap) o il video della fotocamera.
+function tensoreDa(sorgente, larghezza, altezza) {
+  const lato = Math.min(larghezza, altezza);
   const c = document.createElement("canvas");
   c.width = c.height = 224;
-  const g = c.getContext("2d");
+  const g = c.getContext("2d", { willReadFrequently: true });
   g.imageSmoothingEnabled = true;
   g.imageSmoothingQuality = "high";
-  g.drawImage(img, (img.width - lato) / 2, (img.height - lato) / 2, lato, lato, 0, 0, 224, 224);
-  img.close?.();
+  g.drawImage(sorgente, (larghezza - lato) / 2, (altezza - lato) / 2, lato, lato, 0, 0, 224, 224);
   const px = g.getImageData(0, 0, 224, 224).data;
   const n = 224 * 224;
   const dati = new Float32Array(3 * n);
@@ -73,16 +72,24 @@ async function tensoreDaFoto(file) {
     dati[n + i] = px[i * 4 + 1] / 255;
     dati[2 * n + i] = px[i * 4 + 2] / 255;
   }
-  return { tensore: new ort.Tensor("float32", dati, [1, 3, 224, 224]), anteprima: c.toDataURL("image/jpeg", 0.8) };
+  return { tensore: new ort.Tensor("float32", dati, [1, 3, 224, 224]), tela: c };
+}
+
+async function probabilita(tensore) {
+  const s = await modelloMalattie();
+  const uscita = await s.run({ [s.inputNames[0]]: tensore });
+  return Array.from(uscita[s.outputNames[0]].data);
+}
+function ordina(p) {
+  return p.map((v, i) => ({ classe: CLASSI_MODELLO[i], prob: v })).sort((a, b) => b.prob - a.prob);
 }
 
 async function riconosciFoto(file) {
-  const s = await modelloMalattie();
-  const { tensore, anteprima } = await tensoreDaFoto(file);
-  const uscita = await s.run({ [s.inputNames[0]]: tensore });
-  const p = Array.from(uscita[s.outputNames[0]].data);
-  const ordinate = p.map((v, i) => ({ classe: CLASSI_MODELLO[i], prob: v })).sort((a, b) => b.prob - a.prob);
-  return { ordinate, anteprima };
+  await modelloMalattie();
+  const img = await createImageBitmap(file, { imageOrientation: "from-image" });
+  const { tensore, tela } = tensoreDa(img, img.width, img.height);
+  img.close?.();
+  return { ordinate: ordina(await probabilita(tensore)), anteprima: tela.toDataURL("image/jpeg", 0.8) };
 }
 
 function htmlSchedaProblema(id) {
@@ -118,31 +125,127 @@ function htmlRisultato({ ordinate, anteprima }) {
 
 // Riquadro in cima alla guida delle malattie.
 function htmlRiconosci() {
+  const vivo = !!navigator.mediaDevices?.getUserMedia;
   return `<div class="riconosci">
-    <label class="bottone-foto">📷 Riconosci da una foto
-      <input type="file" accept="image/*" id="foto-malattia" hidden>
-    </label>
-    <p class="tenue piccolo">Fotografa <b>da vicino una foglia sola</b> o l'insetto, al centro della foto. <span class="chip-futuro">in prova</span></p>
+    <div class="riga-bottoni" style="margin:0">
+      ${vivo ? `<button type="button" class="bottone-foto" id="vivo-avvia">🎥 Inquadra dal vivo</button>` : ""}
+      <label class="bottone-foto secondario">📷 Scatta
+        <input type="file" accept="image/*" capture="environment" class="foto-malattia" hidden>
+      </label>
+      <label class="bottone-foto secondario">🖼️ Dalla galleria
+        <input type="file" accept="image/*" class="foto-malattia" hidden>
+      </label>
+    </div>
+    <p class="tenue piccolo">Inquadra <b>da vicino una foglia sola</b> o l'insetto, al centro. <span class="chip-futuro">in prova</span></p>
+    <div id="vivo" hidden>
+      <div class="vivo-video"><video playsinline muted autoplay></video></div>
+      <p class="vivo-esito" aria-live="polite">Accendo la fotocamera…</p>
+      <div class="riga-bottoni" style="margin:6px 0 0">
+        <button type="button" id="vivo-usa" disabled>✓ Usa questa</button>
+        <button type="button" class="secondario" id="vivo-chiudi">✕ Chiudi la fotocamera</button>
+      </div>
+    </div>
     <div id="esito-foto"></div>
   </div>`;
 }
 
+// -----------------------------------------------------------------------------
+// Dal vivo: la fotocamera resta accesa e il modello guarda il quadrato centrale
+// circa 3 volte al secondo. La risposta è la media degli ultimi fotogrammi, così
+// non salta da una malattia all'altra a ogni movimento.
+// -----------------------------------------------------------------------------
+function collegaVivo(f, mostraRisultato) {
+  const box = f.querySelector("#vivo");
+  const avvia = f.querySelector("#vivo-avvia");
+  if (!box || !avvia) return;
+  const video = box.querySelector("video");
+  const testo = box.querySelector(".vivo-esito");
+  const usa = box.querySelector("#vivo-usa");
+  let flusso = null, attivo = false, media = null, ultimo = null;
+
+  const nascosta = () => { if (document.hidden) ferma(); };
+  const ferma = () => {
+    attivo = false;
+    document.removeEventListener("visibilitychange", nascosta);
+    flusso?.getTracks().forEach((t) => t.stop());
+    flusso = null;
+    video.srcObject = null;
+    box.hidden = true;
+    avvia.hidden = false;
+  };
+  const giro = async () => {
+    if (!attivo) return;
+    // Finestra chiusa o contenuto cambiato: spengo la fotocamera.
+    if (!video.isConnected || !f.open) { ferma(); return; }
+    if (video.readyState >= 2 && video.videoWidth) {
+      const { tensore, tela } = tensoreDa(video, video.videoWidth, video.videoHeight);
+      const p = await probabilita(tensore);
+      if (!attivo) return;
+      media = media ? media.map((v, i) => v * 0.5 + p[i] * 0.5) : p;
+      const [a, b] = ordina(media);
+      ultimo = { ordinate: ordina(media), tela };
+      const pc = (x) => Math.round(x.prob * 100);
+      testo.innerHTML = a.prob >= SICURO
+        ? `<b>${esc(CLASSI_INFO[a.classe].nome)}</b> ${pc(a)}%`
+        : `<span class="tenue">Forse</span> <b>${esc(CLASSI_INFO[a.classe].nome)}</b> ${pc(a)}% <span class="tenue">o ${esc(CLASSI_INFO[b.classe].nome)} ${pc(b)}%</span>`;
+      testo.classList.toggle("sicuro", a.prob >= SICURO);
+      usa.disabled = false;
+    }
+    setTimeout(giro, 300);
+  };
+
+  avvia.addEventListener("click", async () => {
+    avvia.hidden = true;
+    box.hidden = false;
+    usa.disabled = true;
+    media = null;
+    testo.textContent = sessioneModello ? "Accendo la fotocamera…" : "Preparo il riconoscimento (la prima volta scarica circa 17 MB)…";
+    try {
+      await modelloMalattie();
+      flusso = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 1280 } }, audio: false,
+      });
+      if (!video.isConnected || !f.open) { ferma(); return; }
+      video.srcObject = flusso;
+      document.addEventListener("visibilitychange", nascosta);
+      await video.play().catch(() => {});
+      testo.textContent = "Inquadra la foglia dentro il quadrato…";
+      attivo = true;
+      giro();
+    } catch (e) {
+      console.error(e);
+      ferma();
+      f.querySelector("#esito-foto").innerHTML = `<p class="avviso">Non riesco ad aprire la fotocamera${e.name === "NotAllowedError" ? ": devi permettere all'app di usarla (impostazioni del browser, permessi del sito)" : ""}. Puoi usare «📷 Scatta».</p>`;
+    }
+  });
+  usa.addEventListener("click", () => {
+    if (!ultimo) return;
+    const r = { ordinate: ultimo.ordinate, anteprima: ultimo.tela.toDataURL("image/jpeg", 0.8) };
+    ferma();
+    mostraRisultato(r);
+  });
+  box.querySelector("#vivo-chiudi").addEventListener("click", ferma);
+  // La fotocamera si spegne sempre quando si chiude la finestra o si esce dall'app.
+  f.addEventListener("close", ferma, { once: true });
+}
+
 function collegaRiconosci(f, { aiuolaId = "", impiantoId = "" } = {}) {
-  const input = f.querySelector("#foto-malattia");
   const esito = f.querySelector("#esito-foto");
-  if (!input) return;
-  input.addEventListener("change", async () => {
+  if (!esito) return;
+  const mostra = (r) => { esito.innerHTML = htmlRisultato(r); };
+  f.querySelectorAll(".foto-malattia").forEach((input) => input.addEventListener("change", async () => {
     const file = input.files[0];
     input.value = "";
     if (!file) return;
     esito.innerHTML = `<p class="tenue">${sessioneModello ? "Guardo la foto…" : "Preparo il riconoscimento (la prima volta scarica circa 17 MB, poi funziona anche senza rete)…"}</p>`;
     try {
-      esito.innerHTML = htmlRisultato(await riconosciFoto(file));
+      mostra(await riconosciFoto(file));
     } catch (e) {
       console.error(e);
       esito.innerHTML = `<p class="avviso">Non sono riuscito a riconoscere la foto: ${esc(e.message || e)}. La prima volta serve la rete.</p>`;
     }
-  });
+  }));
+  collegaVivo(f, mostra);
   esito.addEventListener("click", (e) => {
     const t = e.target.closest("[data-tratta]");
     if (!t) return;

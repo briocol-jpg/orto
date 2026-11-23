@@ -368,3 +368,11 @@ button.voce-storico { background: none; border: none; padding: 0; margin: 0; wid
 /* Icone disegnate degli ortaggi (icone.js), grandi come un'emoji. */
 svg.ico { width: 1.25em; height: 1.25em; vertical-align: -0.28em; display: inline-block; flex-shrink: 0; }
 .scacchiera .cella .em svg.ico { width: 1.1em; height: 1.1em; }
+/* Riconoscimento dal vivo: il riquadro quadrato mostra esattamente ciò che guarda il modello. */
+.bottone-foto.secondario { background: var(--carta); color: var(--verde); border: 1px solid var(--verde); }
+#vivo { margin-top: 10px; }
+.vivo-video { position: relative; width: 100%; max-width: 420px; aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: #000; }
+.vivo-video video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.vivo-video::after { content: ""; position: absolute; inset: 0; border: 3px solid rgba(255, 255, 255, 0.7); border-radius: 12px; pointer-events: none; }
+.vivo-esito { font-size: 1.1rem; margin: 8px 0 0; min-height: 1.6em; }
+.vivo-esito.sicuro b { color: var(--verde); }
