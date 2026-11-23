@@ -229,11 +229,19 @@ dialog {
   padding: 0;
   width: min(560px, calc(100vw - 24px));
   max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--carta);
   color: var(--testo);
 }
 dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
-dialog .contenuto { padding: 16px; overflow-y: auto; max-height: calc(100vh - 40px); }
+/* Un solo contenitore che scorre (il dialog): su iPad i menu a tendina dentro
+   contenitori annidati che scorrono a volte non si aprono. */
+dialog .contenuto { padding: 16px; }
+/* Salva e Annulla sempre visibili in fondo alla finestra. */
+dialog #modulo > .riga-bottoni { position: sticky; bottom: 0; z-index: 3; background: var(--carta);
+  margin: 10px -16px -16px; padding: 10px 16px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--linea); }
 dialog h2 { margin-top: 0; }
 
 label { display: block; margin: 10px 0 4px; font-size: 0.9rem; color: var(--tenue); }
@@ -310,7 +318,9 @@ svg.pianta a { cursor: pointer; }
 .scacchiera .cella .em { font-size: 1.3rem; line-height: 1.2; }
 .scacchiera .cella .nome { font-size: 0.7rem; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .scacchiera .cella.angolo { outline: 3px solid var(--avviso); outline-offset: -3px; }
-.scorri-scacchiera { overflow: auto; max-height: 70vh; overscroll-behavior: contain; }
+/* Scacchiera grande: al massimo metà schermo, così resta spazio per far
+   scorrere la finestra col dito fuori dalla scacchiera. */
+.scorri-scacchiera { overflow: auto; max-height: 45vh; max-height: 45dvh; }
 .scacchiera.fitta { gap: 2px; width: max-content; }
 .scacchiera.fitta .cella, .scacchiera.fitta.grande .cella { min-height: 2.6em; height: 2.6em; font-size: 0.65rem; padding: 0; overflow: hidden; }
 .scacchiera.fitta .cella .em { font-size: 1rem; }
