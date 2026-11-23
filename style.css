@@ -343,3 +343,12 @@ svg.pianta a { cursor: pointer; }
 details.problema { border: 1px solid var(--linea); border-radius: 10px; padding: 8px 10px; margin: 8px 0; background: var(--carta); }
 details.problema summary { cursor: pointer; }
 details.problema p { margin: 8px 0; }
+
+/* Riconoscimento da foto */
+.riconosci { border: 1px solid var(--linea); border-radius: 10px; padding: 10px; margin: 6px 0 14px; background: var(--verde-chiaro); }
+.riconosci p { margin: 6px 0 0; }
+.bottone-foto { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 8px 16px; border-radius: 10px; background: var(--verde); color: #fff; font-weight: 600; cursor: pointer; }
+@media (prefers-color-scheme: dark) { .bottone-foto { color: #10180f; } }
+.riconosci-esito { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
+.riconosci-esito img { width: 96px; height: 96px; border-radius: 8px; flex: none; }
+.riconosci-esito p { margin: 0; }

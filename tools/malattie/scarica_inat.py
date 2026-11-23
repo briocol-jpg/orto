@@ -28,6 +28,8 @@ USER_AGENT = "OrtoMalattie/0.1 (dataset per uso personale)"
 
 EUROPA = 97391
 LARVA = {"term_id": 1, "term_value_id": 6}  # annotazione "Life Stage = Larva"
+# Piante coltivate: su iNaturalist sono "captive" e quindi sempre casual.
+COLTIVATA = {"captive": "true", "quality_grade": "casual"}
 
 # classe -> [(taxon, filtri extra, luogo o None = mondo, quante osservazioni)]
 CLASSI = {
@@ -55,7 +57,21 @@ CLASSI = {
         ("Golovinomyces orontii", {}, None, 150),
     ],
     "botrite": [("Botrytis cinerea", {}, None, 250)],
+    # Ortaggi coltivati in Europa: da rivedere tenendo solo foglie sane.
+    "sana": [
+        ("Brassica oleracea", COLTIVATA, EUROPA, 200),
+        ("Solanum lycopersicum", COLTIVATA, EUROPA, 120),
+        ("Lactuca sativa", COLTIVATA, EUROPA, 100),
+        ("Cucurbita pepo", COLTIVATA, EUROPA, 100),
+        ("Capsicum annuum", COLTIVATA, EUROPA, 80),
+        ("Solanum tuberosum", COLTIVATA, EUROPA, 80),
+        ("Phaseolus vulgaris", COLTIVATA, EUROPA, 60),
+        ("Petroselinum crispum", COLTIVATA, EUROPA, 60),
+    ],
 }
+
+# per le famiglie l'API non accetta taxon_name (dà 0 risultati): si usa il numero
+TAXON_ID = {"Aphididae": 52381, "Aleyrodidae": 154784, "Coccinellidae": 48486}
 
 PER_PAGE = 100
 MAX_PAGE = 100  # l'API non va oltre 10000 risultati
@@ -118,8 +134,9 @@ def main() -> None:
             print(f"\n{classe} · {taxon}{' (larve)' if filtri is LARVA else ''}: {fatti}/{quanti}", flush=True)
             if fatti >= quanti:
                 continue
-            base = {"taxon_name": taxon, "quality_grade": "research", "photos": "true",
-                    "per_page": PER_PAGE, "order_by": "id", "order": "desc", **filtri}
+            chi = {"taxon_id": TAXON_ID[taxon]} if taxon in TAXON_ID else {"taxon_name": taxon}
+            base = {**chi, "quality_grade": "research", "photos": "true",
+                    "per_page": PER_PAGE, "order_by": "id", "order": "desc", **filtri}  # filtri può cambiare quality_grade
             if luogo:
                 base["place_id"] = luogo
             try:

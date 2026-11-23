@@ -1093,7 +1093,8 @@ function apriDiagnosi({ ortaggioId = "", aiuolaId = "", impiantoId = "" } = {}) 
       <p class="tenue piccolo">È una guida per orientarsi, non una diagnosi sicura. Nel dubbio porta un rametto in un vivaio o al consorzio agrario. Prova prima i rimedi biologici. Per i prodotti di sintesi compra solo quelli autorizzati per l'orto di casa («uso non professionale») e per quell'ortaggio: sono i nomi dei principi attivi, li trovi scritti sull'etichetta. Usa sempre le dosi dell'etichetta e rispetta i giorni di attesa prima della raccolta.</p>
       <div class="riga-bottoni"><button class="secondario" data-chiudi>Chiudi</button></div>`;
   };
-  apriFinestra(`<h2>🩺 Malattie e parassiti</h2><div id="diagnosi"></div>`, (f) => {
+  apriFinestra(`<h2>🩺 Malattie e parassiti</h2>${htmlRiconosci()}<div id="diagnosi"></div>`, (f) => {
+    collegaRiconosci(f, { aiuolaId, impiantoId });
     const box = f.querySelector("#diagnosi");
     const ridisegna = () => {
       box.innerHTML = corpo();
