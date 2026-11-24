@@ -318,9 +318,15 @@ function stimeImpianto(i) {
 
 // Rotazione: stessa famiglia nella stessa aiuola negli ultimi anni.
 // Con la scacchiera conta solo chi stava nelle stesse caselle (o su tutta l'aiuola).
+// Aiuola riservata a un ortaggio che non si sposta: la terra va rinnovata.
+function consiglioFissa(a) {
+  const o = PER_ID[a.fissa];
+  return `📌 Qui ogni anno ${esc(o.nome.toLowerCase())}, senza rotazione: la terra va rinnovata. Ogni autunno interra letame maturo (4–5 kg/m²${a.larghezza && a.lunghezza ? `, ${fmtKg(4.5 * a.larghezza * a.lunghezza)} per questa aiuola` : ""}) o stallatico pellettato; ogni 3–4 anni, o se la pianta deperisce presto, togli i primi 20–30 cm di terra e mettine di nuova mescolata a compost.`;
+}
+
 function avvisiRotazione(aiuolaId, ortaggioId, dataISO, escludiId, celle) {
   const o = PER_ID[ortaggioId];
-  if (!o || aiuola(aiuolaId)?.semenzaio) return [];
+  if (!o || aiuola(aiuolaId)?.semenzaio || aiuola(aiuolaId)?.fissa === ortaggioId) return [];
   const data = daISO(dataISO);
   const avvisi = [];
   for (const i of S.impianti) {
@@ -520,6 +526,7 @@ function htmlAvvisi(aiuolaId, ortaggioId, dataISO, escludiId, celle) {
   if (!aiuolaId || !ortaggioId || !dataISO) return "";
   const o = PER_ID[ortaggioId];
   let h = "";
+  if (aiuola(aiuolaId)?.fissa === ortaggioId) h += `<div class="bene">${consiglioFissa(aiuola(aiuolaId))}</div>`;
   for (const t of avvisiRotazione(aiuolaId, ortaggioId, dataISO, escludiId, celle)) h += `<div class="avviso">🔄 ${esc(t)}</div>`;
   const v = avvisiVicini(aiuolaId, ortaggioId, escludiId, celle);
   if (v.cattivi.length) h += `<div class="pericolo">⚠️ ${esc(o.nome)} non sta bene vicino a: ${v.cattivi.map((x) => esc(PER_ID[x].nome.toLowerCase())).join(", ")}.</div>`;
@@ -650,6 +657,27 @@ function prossimoNumero(zona) {
   return Math.max(0, ...S.aiuole.filter((x) => !x.semenzaio && (x.zona || ZONA_PREDEFINITA) === zona).map((x) => Number(x.numero) || 0)) + 1;
 }
 
+// Per mettere un'aiuola al numero n di una zona: le altre scalano di uno.
+// Aiuola nuova (o che arriva da un'altra zona): quelle da n in poi fanno +1.
+// Aiuola che si sposta nella stessa zona: solo quelle tra il vecchio e il nuovo
+// posto, così non restano buchi. Lo storico è legato all'id, non al numero.
+function spostamentiAiuole(zona, n, a) {
+  const vecchio = a && (a.zona || ZONA_PREDEFINITA) === zona ? Number(a.numero) : null;
+  const out = [];
+  for (const x of S.aiuole) {
+    if (x === a || x.semenzaio || (x.zona || ZONA_PREDEFINITA) !== zona) continue;
+    const k = Number(x.numero);
+    if (vecchio == null || Number.isNaN(vecchio)) { if (k >= n) out.push([x, k + 1]); }
+    else if (n < vecchio && k >= n && k < vecchio) out.push([x, k + 1]);
+    else if (n > vecchio && k > vecchio && k <= n) out.push([x, k - 1]);
+  }
+  return out.sort((p, q) => Number(p[0].numero) - Number(q[0].numero));
+}
+function testoSpostamenti(lista) {
+  const voci = lista.map(([x, nuovo]) => `${x.numero}${x.nome ? ` (${x.nome})` : ""} → ${nuovo}`);
+  return voci.length > 6 ? `${voci.slice(0, 5).join(", ")} … (${voci.length} aiuole)` : voci.join(", ");
+}
+
 function moduloAiuola(a) {
   if (a?.semenzaio) {
     modulo({
@@ -664,12 +692,15 @@ function moduloAiuola(a) {
     titolo: a ? "Modifica aiuola" : "Nuova aiuola",
     campi: [
       { id: "zona", etichetta: "Zona (es. Orto, Serra)", valore: zonaIniziale, lista: [...new Set([...zone(), "Orto", "Serra"])], richiesto: true },
-      { id: "numero", etichetta: "Numero (da sinistra a destra: 1, 2, 3…)", tipo: "number", passo: "1", valore: a?.numero ?? prossimoNumero(zonaIniziale), richiesto: true },
+      { id: "numero", etichetta: "Numero (da sinistra a destra: 1, 2, 3…; anche 0 o negativi)", tipo: "number", passo: "1", valore: a?.numero ?? prossimoNumero(zonaIniziale), richiesto: true },
+      { id: "faiPosto", etichetta: "Fai posto: le altre aiuole cambiano numero (la loro storia resta)", tipo: "check", valore: true, nascosto: true },
       { id: "nome", etichetta: "Nome (facoltativo, es. Lungo il muro)", valore: a?.nome },
       { id: "larghezza", etichetta: "Larghezza in metri (da sinistra a destra)", tipo: "number", passo: "0.05", valore: a?.larghezza },
       { id: "lunghezza", etichetta: "Lunghezza in metri (dal fondo verso di te)", tipo: "number", passo: "0.05", valore: a?.lunghezza },
       { id: "copertura", etichetta: "All'aperto o in serra", tipo: "select", opzioni: Object.entries(COPERTURE), valore: a?.copertura ?? "" },
       { id: "pacciamatura", etichetta: "Pacciamatura", tipo: "select", opzioni: Object.entries(PACCIAMATURE), valore: a?.pacciamatura ?? "" },
+      { id: "fissa", etichetta: "Sempre lo stesso ortaggio, ogni anno (non si ruota: es. zucca che sale sul tetto)", tipo: "select",
+        opzioni: [["", "— no, si ruota —"], ...elencoOrtaggi().map((o) => [o.id, `${o.emoji} ${o.nome}`])], valore: a?.fissa ?? "" },
       { id: "righe", etichetta: "Scacchiera: righe a, b, c… (dal fondo verso di te)", tipo: "number", passo: "1", valore: grigliaAiuola(a).righe },
       { id: "colonne", etichetta: "Scacchiera: colonne 1, 2, 3… (da sinistra a destra)", tipo: "number", passo: "1", valore: grigliaAiuola(a).colonne },
       { id: "note", etichetta: "Note (esposizione, terreno…)", tipo: "textarea", valore: a?.note },
@@ -681,15 +712,20 @@ function moduloAiuola(a) {
         form.elements.numero.value = prossimoNumero(v.zona);
       }
       const doppia = S.aiuole.find((x) => x !== a && !x.semenzaio && (x.zona || ZONA_PREDEFINITA) === v.zona && String(x.numero) === v.numero);
-      return doppia ? `<div class="avviso">C'è già l'aiuola ${esc(v.numero)} in «${esc(v.zona)}»: cambia numero, oppure lascialo e cambia numero all'altra.</div>` : "";
+      form.querySelector("#w_faiPosto").hidden = !doppia;
+      if (!doppia) return "";
+      if (v.faiPosto) return `<div class="bene">Faccio posto in «${esc(v.zona)}»: ${esc(testoSpostamenti(spostamentiAiuole(v.zona, Number(v.numero), a)))}. Colture e diario restano legati alle loro aiuole.</div>`;
+      return `<div class="avviso">C'è già l'aiuola ${esc(v.numero)} in «${esc(v.zona)}»: spunta «Fai posto» oppure cambia numero.</div>`;
     },
     salva: (v) => {
       const dati = {
         zona: v.zona, numero: Number(v.numero), nome: v.nome, note: v.note,
         larghezza: numeroMisura(v.larghezza), lunghezza: numeroMisura(v.lunghezza),
-        copertura: v.copertura, pacciamatura: v.pacciamatura,
+        copertura: v.copertura, pacciamatura: v.pacciamatura, fissa: v.fissa,
         ...grigliaAiuola({ righe: v.righe, colonne: v.colonne }),
       };
+      const doppia = S.aiuole.some((x) => x !== a && !x.semenzaio && (x.zona || ZONA_PREDEFINITA) === v.zona && String(x.numero) === v.numero);
+      if (doppia && v.faiPosto) for (const [x, nuovo] of spostamentiAiuole(v.zona, dati.numero, a)) x.numero = nuovo;
       if (a) {
         Object.assign(a, dati);
         delete a.misure;
@@ -762,7 +798,15 @@ function moduloZona(zona) {
         opzioni: [["", "non indicato (disegno dritto)"], ...DIREZIONI.map(([g, t]) => [g, t])], valore: inElenco ? dir : "" },
       { id: "gradi", etichetta: "…oppure in gradi di bussola, se lo sai preciso (0 = nord, 90 = est)", tipo: "number", passo: "1", valore: inElenco ? "" : dir },
       { id: "specchia", etichetta: "Fondo e davanti delle aiuole sono invertiti nel disegno", tipo: "check", valore: z.specchia },
+      { id: "rinumera", etichetta: "Rinumera le aiuole 1, 2, 3… nell'ordine di adesso, da sinistra a destra (la loro storia resta)", tipo: "check", valore: false },
     ],
+    aggiorna: (v) => {
+      if (!v.rinumera) return "";
+      const lista = aiuoleOrdinate().filter((a) => !a.semenzaio && (a.zona || ZONA_PREDEFINITA) === zona);
+      const cambi = lista.map((a, k) => [a, k + 1]).filter(([a, n]) => Number(a.numero) !== n);
+      return cambi.length ? `<div class="bene">Nuovi numeri: ${esc(testoSpostamenti(cambi))}. Colture e diario restano legati alle loro aiuole.</div>`
+        : `<div class="tenue piccolo">Le aiuole sono già numerate 1, 2, 3…</div>`;
+    },
     extra: `<p class="tenue piccolo">Guarda la zona su una mappa (per esempio Google Maps, col nord in alto) e scegli la direzione che va dall'aiuola 1 all'ultima. L'app gira il disegno, mette la freccia del Nord e ti dice dove mettere le piante alte.</p>`,
     salva: (v) => {
       const cm = Number(v.corridoio);
@@ -773,6 +817,9 @@ function moduloZona(zona) {
         direzione: Number.isFinite(g) ? g : null,
         specchia: v.specchia,
       };
+      if (v.rinumera) {
+        aiuoleOrdinate().filter((a) => !a.semenzaio && (a.zona || ZONA_PREDEFINITA) === zona).forEach((a, k) => { a.numero = k + 1; });
+      }
       if (v.nome !== zona) {
         for (const a of S.aiuole) if (!a.semenzaio && (a.zona || ZONA_PREDEFINITA) === zona) a.zona = v.nome;
         delete S.zone[zona];
@@ -932,9 +979,9 @@ function moduloTrapianto(i) {
   modulo({
     titolo: `Trapianta ${o.nome.toLowerCase()}`,
     campi: [
-      { id: "aiuolaId", etichetta: "In quale aiuola", tipo: "select", opzioni: [...opzioniAiuole(false), [NUOVA_AIUOLA, "＋ Nuova aiuola…"]], richiesto: true },
+      { id: "aiuolaId", etichetta: "In quale aiuola", tipo: "select", opzioni: [...opzioniAiuole(false), [NUOVA_AIUOLA, "＋ Nuova aiuola…"]], valore: aiuola(i.pianoAiuola) ? i.pianoAiuola : "", richiesto: true },
       ...campiNuovaAiuola(),
-      campoCelle([]),
+      campoCelle(aiuola(i.pianoAiuola) ? i.pianoCelle : []),
       { id: "data", etichetta: "Data del trapianto", tipo: "date", valore: aISO(oggi()), richiesto: true },
       { id: "quantita", etichetta: "Quante piantine", valore: i.quantita },
     ],
@@ -954,6 +1001,7 @@ function moduloTrapianto(i) {
       S.impianti.push({
         id: nuovoId(), finito: false, ortaggioId: i.ortaggioId, aiuolaId: v.aiuolaId, modo: "tra",
         data: v.data, varieta: i.varieta, quantita: v.quantita, note: "", daSemenzaio: i.id, celle: celleTrapianto,
+        ...(i.piano ? { piano: i.piano } : {}),
       });
     },
   });
@@ -1310,6 +1358,7 @@ function vistaOggi() {
     </section>` : "";
 
   return `${htmlProgramma}
+    ${htmlInvitoPiano(false)}
     <section class="carta">
       <h2 style="margin-top:0">${MESI_LUNGHI[ora.getMonth()][0].toUpperCase() + MESI_LUNGHI[ora.getMonth()].slice(1)}: lavori del mese</h2>
       <p style="margin:0">${esc(LAVORI_MESE[ora.getMonth()])}</p>
@@ -1418,6 +1467,7 @@ function vistaOrto(idAiuola) {
       <button class="secondario" id="piu-aiuole">＋ Più aiuole insieme</button>
       <button class="secondario" id="nuova-coltura">＋ Nuova coltura</button>
       <button class="secondario" id="diagnosi">🩺 Malattie e parassiti</button>
+      ${htmlInvitoPiano(true)}
     </div>`;
 }
 
@@ -1544,7 +1594,7 @@ function htmlPianta(soloZona) {
       <p class="tenue piccolo">${or.attivo ? `La fila va ${esc(DIREZIONI_TESTO(or.gradi))}.` : "Disegno dritto: l'orientamento della zona non è indicato."}
       Aiuole in ordine di numero, ${corridoio ? `con vialetti di ${Math.round(corridoio * 100)} cm` : "senza vialetti"}. Lunghezza totale circa ${fmtM(larghezzaTot)} m${superficie ? ` · ${fmtM(superficie)} m² coltivati` : ""}.
       ${misurate.length < lista.length ? "Le aiuole tratteggiate non hanno ancora le misure: toccale e premi «Modifica aiuola» per inserirle." : ""} Tocca un'aiuola per aprirla.</p>
-      <button class="piccolo secondario" data-zona="${esc(zona)}">⚙️ Nome, vialetti e orientamento</button>
+      <button class="piccolo secondario" data-zona="${esc(zona)}">⚙️ Nome, vialetti, orientamento, numeri</button>
     </section>`;
   }).join("");
   return blocchi;
@@ -1606,7 +1656,7 @@ function legendaPianta(lista) {
 }
 
 function suggerimentiAiuola(a) {
-  if (a.semenzaio) return "";
+  if (a.semenzaio || PER_ID[a.fissa]) return "";
   const ora = oggi();
   const margine = a.copertura === "serra" ? ANTICIPO_SERRA : 0;
   const da = piuGiorni(ora, -margine);
@@ -1689,6 +1739,7 @@ function vistaAiuola(a) {
     <h2>${a.semenzaio ? "🪴" : a.copertura === "serra" ? "🏠" : "🟫"} ${esc(nomeAiuola(a))}</h2>
     ${misureAiuola(a) || tipoAiuola(a) ? `<p class="tenue">${esc([misureAiuola(a), tipoAiuola(a)].filter(Boolean).join(" · "))}</p>` : ""}
     ${a.note ? `<p>${esc(a.note)}</p>` : ""}
+    ${PER_ID[a.fissa] ? `<div class="bene">${consiglioFissa(a)}</div>` : ""}
     ${a.semenzaio ? `<p class="tenue piccolo">Qui segni le semine al riparo (in casa, in serra, in vasetti). Quando le piantine sono pronte premi «Trapianta» e scegli l'aiuola.</p>` : ""}
     ${consiglioAiuolaVuota(a)}
     ${htmlScacchiera(a)}
@@ -2174,7 +2225,7 @@ function esportaIcs() {
 function rotta() {
   const h = location.hash.replace(/^#/, "") || "oggi";
   const [vista, param] = h.split("/");
-  return { vista: ["oggi", "calendario", "orto", "diario", "luogo"].includes(vista) ? vista : "oggi", param };
+  return { vista: ["oggi", "calendario", "orto", "diario", "luogo", "piano"].includes(vista) ? vista : "oggi", param };
 }
 
 // Se la finestra cambia molto di larghezza (PC, telefono girato), ridisegno la pianta.
@@ -2193,10 +2244,10 @@ function disegna() {
   const app = el("app");
   const imp = S.impostazioni;
   el("sottotitolo").textContent = imp.luogo ? `${imp.luogo}${imp.altitudine != null ? ` · ${Math.round(imp.altitudine)} m` : ""}` : fmtLungo(oggi());
-  document.querySelectorAll(".schede a").forEach((a) => a.classList.toggle("attiva", a.dataset.vista === vista));
+  document.querySelectorAll(".schede a").forEach((a) => a.classList.toggle("attiva", a.dataset.vista === (vista === "piano" ? "orto" : vista)));
 
   document.body.dataset.vista = vista; // sul PC la scheda Orto è più larga (vedi style.css)
-  const viste = { oggi: vistaOggi, calendario: vistaCalendario, orto: () => vistaOrto(param), diario: vistaDiario, luogo: vistaLuogo };
+  const viste = { oggi: vistaOggi, calendario: vistaCalendario, orto: () => vistaOrto(param), diario: vistaDiario, luogo: vistaLuogo, piano: vistaPiano };
   const scroll = window.scrollY;
   app.innerHTML = viste[vista]();
   if (disegna.ultima === location.hash) window.scrollTo(0, scroll);
@@ -2204,6 +2255,7 @@ function disegna() {
 
   if (vista === "oggi") dopoOggi();
   collega(app);
+  if (vista === "piano") collegaPiano(app);
 }
 
 // Collega i bottoni della vista corrente.

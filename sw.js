@@ -3,12 +3,12 @@
 // le richieste ai servizi esterni (meteo, clima, terreno) vanno sempre in rete.
 // Ogni download salta la cache HTTP del browser (GitHub Pages la tiene 10
 // minuti): altrimenti una versione nuova potrebbe partire coi file vecchi.
-const VERSIONE = "orto-v25";
+const VERSIONE = "orto-v29";
 // Modello delle malattie e motore (~17 MB): cache a parte, che non si svuota a
 // ogni versione; si riempie al primo uso del riconoscimento da foto.
 const MODELLO = "orto-modello-v1";
 const FILE = [
-  "./", "index.html", "style.css", "data.js", "icone.js", "app.js", "riconosci.js", "manifest.webmanifest",
+  "./", "index.html", "style.css", "data.js", "icone.js", "piano.js", "app.js", "riconosci.js", "manifest.webmanifest",
   "icone/icona.svg", "icone/icona-192.png", "icone/icona-512.png",
 ];
 

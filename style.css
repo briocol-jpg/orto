@@ -317,6 +317,7 @@ svg.pianta a { cursor: pointer; }
 .scacchiera.grande .cella.piena { background: var(--verde-chiaro); }
 .scacchiera .cella .em { font-size: 1.3rem; line-height: 1.2; }
 .scacchiera .cella .nome { font-size: 0.7rem; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.scacchiera span.cella { display: flex; align-items: center; border-radius: 6px; }
 .scacchiera .cella.angolo { outline: 3px solid var(--avviso); outline-offset: -3px; }
 /* Scacchiera grande: al massimo metà schermo, così resta spazio per far
    scorrere la finestra col dito fuori dalla scacchiera. */
