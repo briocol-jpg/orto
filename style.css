@@ -376,3 +376,4 @@ svg.ico { width: 1.25em; height: 1.25em; vertical-align: -0.28em; display: inlin
 .vivo-video::after { content: ""; position: absolute; inset: 0; border: 3px solid rgba(255, 255, 255, 0.7); border-radius: 12px; pointer-events: none; }
 .vivo-esito { font-size: 1.1rem; margin: 8px 0 0; min-height: 1.6em; }
 .vivo-esito.sicuro b { color: var(--verde); }
+.correggi { border-top: 1px dashed var(--linea); margin-top: 10px; }
