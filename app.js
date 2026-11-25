@@ -6,7 +6,9 @@
 // =============================================================================
 "use strict";
 
-const CHIAVE = "ilmioorto.v1";
+// Nell'orto di prova (prova.js) i dati stanno in un'altra chiave: quelli veri non si toccano.
+const IN_PROVA = (() => { try { return sessionStorage.getItem("ilmioorto.inProva") === "1"; } catch { return false; } })();
+const CHIAVE = IN_PROVA ? "ilmioorto.prova" : "ilmioorto.v1";
 const MESI = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
 const MESI_LUNGHI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio",
   "agosto", "settembre", "ottobre", "novembre", "dicembre"];
@@ -1529,6 +1531,7 @@ function vistaOrto(idAiuola) {
     <h2>${scelta ? esc(scelta) : "Le mie aiuole"}</h2>
     ${bottoni}
     ${htmlPianta(scelta)}
+    ${S.aiuole.length <= 1 ? htmlInvitoProva() : ""}
     ${S.aiuole.length <= 1 ? `<p class="tenue">Crea un'aiuola per ogni pezzo dell'orto: l'app ricorda cosa ci hai coltivato ogni anno e ti avvisa se ripeti la stessa famiglia (rotazione) o metti vicini ortaggi che non vanno d'accordo.</p>` : ""}
     ${carte}
     <div class="riga-bottoni">
@@ -2382,6 +2385,8 @@ function collega(root) {
   su("[data-diagnosi-imp]", (b) => { const i = imp(b.dataset.diagnosiImp); apriDiagnosi({ ortaggioId: i?.ortaggioId, aiuolaId: i?.aiuolaId, impiantoId: i?.id }); });
   su("[data-concima]", (b) => { const a = aiuola(b.dataset.concima); moduloEvento({ tipo: "concimazione", aiuolaId: a.id, testo: testoConcimazione(a) }); });
   su("#nuovo-evento", () => moduloEvento({}));
+  su("#inizia-prova", () => iniziaProva());
+  su("#esci-prova", () => esciProva());
 
   const { param } = rotta();
   const a = param && aiuola(param);

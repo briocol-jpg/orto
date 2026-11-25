@@ -54,6 +54,7 @@ const GUIDA = [
     "Ha indovinato? 👍. Ha sbagliato? 👎 e scegli quella giusta: così l'app impara. Poi <b>📤 Invia le foto</b>.",
   ] },
   { ico: "📍", titolo: "La prima volta", righe: [
+    "Vuoi imparare senza paura di sbagliare? Qui sopra tocca <b>🎓 Prova con un orto di esempio</b>: un orto finto con una guida passo passo. Per tornare al tuo tocca <b>Esci dalla prova</b>.",
     "Vai nell'orto e in 📍 Luogo tocca <b>📍 Prendi la posizione col GPS</b>: l'app sistema le date per il tuo clima.",
     "Tocca un ortaggio e poi <b>☆</b> per segnarlo tra i tuoi ★: in ☀️ Oggi puoi vedere solo quelli.",
   ] },
@@ -67,6 +68,7 @@ const GUIDA = [
 
 function vistaAiuto() {
   return `<h2>❓ Come si usa</h2>
+    ${htmlInvitoProva()}
     <p class="tenue">Una pagina per ogni cosa. Tocca un titolo per aprirlo.</p>
     ${GUIDA.map((g, k) => `<details class="carta guida"${k === 0 ? " open" : ""}>
       <summary><span class="guida-ico">${g.ico}</span> ${g.titolo}</summary>

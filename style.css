@@ -388,3 +388,15 @@ svg.ico { width: 1.25em; height: 1.25em; vertical-align: -0.28em; display: inlin
 .vivo-esito { font-size: 1.1rem; margin: 8px 0 0; min-height: 1.6em; }
 .vivo-esito.sicuro b { color: var(--verde); }
 .correggi { border-top: 1px dashed var(--linea); margin-top: 10px; }
+
+/* Orto di prova (prova.js): striscia in alto, guida passo passo in basso. */
+#striscia-prova { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  background: #fff3c4; color: #4a3b00; padding: 6px 16px; font-size: 0.9rem; border-bottom: 1px solid #e6d58a; }
+#guida-prova { position: fixed; left: 8px; right: 8px; bottom: calc(64px + env(safe-area-inset-bottom)); z-index: 6; max-width: 640px; margin: 0 auto;
+  background: var(--carta); border: 2px solid var(--verde); border-radius: 14px; padding: 10px 14px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25); }
+body.in-prova:not(.guida-aperta) #guida-prova { left: auto; right: 12px; border: none; background: none; box-shadow: none; padding: 0; }
+body.in-prova.guida-aperta main { padding-bottom: 210px; }
+.evidenziato { outline: 3px solid #f0a500; outline-offset: 4px; border-radius: 8px; animation: lampeggia 1.2s ease-in-out 3; }
+@keyframes lampeggia { 50% { outline-color: transparent; } }
+.invito-prova { border: 2px dashed var(--verde); }
+@media (prefers-color-scheme: dark) { #striscia-prova { background: #4a3f12; color: #fff3c4; border-color: #6b5a1a; } }
