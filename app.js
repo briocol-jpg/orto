@@ -1564,11 +1564,19 @@ function htmlPianta(soloZona) {
         fine[f] = x + w + corridoio;
         return { a, f, x, w, h, misurata: Boolean(a.larghezza && a.lunghezza) };
       });
-      let y = 0;
+      // Ogni aiuola va subito davanti a quelle della fila dietro che ha di fronte
+      // (non sotto la più lunga di tutta la fila); se di fronte non c'è niente,
+      // si allinea alla più corta della fila dietro.
+      let prima = [];
       for (const f of file) {
         const questa = righe.filter((q) => q.f === f);
-        questa.forEach((q) => { q.y = y; });
-        y += Math.max(...questa.map((q) => q.h)) + spazio;
+        const base = prima.length ? Math.min(...prima.map((p) => p.y + p.h + spazio)) : 0;
+        const fatte = righe.filter((q) => q.y != null);
+        for (const q of questa) {
+          const davanti = fatte.filter((p) => p.x < q.x + q.w - 0.01 && q.x < p.x + p.w - 0.01);
+          q.y = davanti.length ? Math.max(...davanti.map((p) => p.y + p.h + spazio)) : base;
+        }
+        prima = questa;
       }
       return righe;
     };
