@@ -1580,14 +1580,14 @@ function htmlPianta(soloZona) {
       }
       return righe;
     };
-    let pezzi = posiziona(corridoio);
+    const pezzi = posiziona(corridoio);
     const larghezzaTot = Math.max(...pezzi.map((q) => q.x + q.w));
 
     // Orientamento: la fila va nella direzione della bussola "direzione" (gradi).
     const or = orientamentoZona(zona);
     const T = (px, py) => [px * or.cos - py * or.s * or.sin, px * or.sin + py * or.s * or.cos];
     const angoli = (px, py, w, h) => [T(px, py), T(px + w, py), T(px + w, py + h), T(px, py + h)];
-    let tutti = pezzi.flatMap((q) => angoli(q.x, q.y, q.w, q.h));
+    const tutti = pezzi.flatMap((q) => angoli(q.x, q.y, q.w, q.h));
     const box0 = limiti(tutti);
 
     // Scala in pixel per metro: il disegno occupa la larghezza disponibile (circa 360 px
@@ -1596,11 +1596,6 @@ function htmlPianta(soloZona) {
     const scala = Math.min(PX_PER_METRO, disponibile / Math.max(box0.w, 0.5));
     const lati = pezzi.map((q) => Math.min(q.w, q.h)).sort((m, n) => m - n);
     const fs = Math.min(15 / scala, Math.max(10 / scala, lati[Math.floor(lati.length / 2)] / 4)); // testo in metri
-    // Tra le due file serve posto per le misure di quella dietro e i numeri di quella davanti.
-    if (dietro) {
-      pezzi = posiziona(Math.max(corridoio, fs * 3.3));
-      tutti = pezzi.flatMap((q) => angoli(q.x, q.y, q.w, q.h));
-    }
     const testo = (px, py, contenuto, classe, size) => {
       const [tx, ty] = T(px, py);
       return `<text class="${classe}" x="${tx}" y="${ty}" font-size="${size}" text-anchor="middle" dominant-baseline="central">${contenuto}</text>`;
@@ -1610,7 +1605,11 @@ function htmlPianta(soloZona) {
     const punti = (l) => l.map(([px, py]) => `${px},${py}`).join(" ");
 
     const etichette = [];
-    const disegno = pezzi.map(({ a, x, y, w, h, misurata }) => {
+    const disegno = pezzi.map(({ a, f, x, y, w, h, misurata }) => {
+      // Scritte: con una fila sola numero sopra e misure sotto; con più file la fila
+      // in fondo le ha sopra, quella davanti sotto, quelle in mezzo dentro l'aiuola.
+      // Così tra le file resta solo il vialetto vero.
+      const dove = file.length === 1 ? "solo" : f === file[0] ? "sopra" : f === file[file.length - 1] ? "sotto" : "dentro";
       const attivi = impiantiAttivi(a.id);
       const problemi = attivi.some((i) => avvisiRotazione(a.id, i.ortaggioId, i.data, i.id, i.celle).length
         || avvisiVicini(a.id, i.ortaggioId, i.id, i.celle).cattivi.length);
@@ -1649,24 +1648,27 @@ function htmlPianta(soloZona) {
       } else {
         testi = (posti ? emoji : []).map((em, k) => {
           const px = cx + ((k % perRiga) - (Math.min(perRiga, emoji.length) - 1) / 2) * e;
-          const py = y + fs * 0.3 + Math.floor(k / perRiga) * e + e * 0.5;
+          const py = y + (dove === "dentro" ? fs * 2.4 : fs * 0.3) + Math.floor(k / perRiga) * e + e * 0.5;
           return typeof em === "string" ? testo(px, py, em, "p-emoji", e * 0.85) : iconaPianta(px, py, em, e * 0.85);
         }).join("");
       }
-      // Il numero va sempre fuori, oltre il fondo: tutte le aiuole uguali e niente coperto.
-      const yNumero = y - fs * 0.9;
-      etichette.push(T(cx, yNumero - fs * 0.6));
-      const pos = T(cx, y + h + fs * 1.1);
-      etichette.push(pos);
+      const [yNumero, yMisura] = {
+        solo: [y - fs * 0.9, y + h + fs * 1.1],
+        sopra: [y - fs * 1.8, y - fs * 0.6],
+        sotto: [y + h + fs * 1.0, y + h + fs * 2.2],
+        dentro: [y + fs * 0.9, y + fs * 1.9],
+      }[dove];
+      etichette.push(T(cx, Math.min(yNumero, yMisura) - fs * 0.7), T(cx, Math.max(yNumero, yMisura) + fs * 0.6));
+      const chiaro = dove === "dentro" && a.pacciamatura === "telo" ? " p-chiaro" : "";
       const d = fs * 0.15;
       return `<a href="#orto/${a.id}">
         <title>${esc(nomeAiuola(a))}${misurata ? " · " + esc(misureAiuola(a)) : ""}</title>
         <polygon class="p-aiuola${misurata ? "" : " p-senza"}${a.pacciamatura ? " p-" + a.pacciamatura : ""}" points="${punti(angoli(x, y, w, h))}"/>
         ${a.copertura === "serra" ? `<polygon class="p-serra" points="${punti(angoli(x + d, y + d, Math.max(0, w - 2 * d), Math.max(0, h - 2 * d)))}"/>` : ""}
         ${linee}
-        ${testo(cx, yNumero, `${a.copertura === "serra" ? "🏠" : ""}${esc(a.numero)}${problemi ? " ⚠️" : ""}`, "p-numero", fs * 1.3)}
         ${testi}
-        ${testo(cx, y + h + fs * 1.1, misurata ? `${fmtM(a.larghezza)}×${fmtM(a.lunghezza)}` : "misure?", "p-misura", fs * 0.8)}
+        ${testo(cx, yNumero, `${a.copertura === "serra" ? "🏠" : ""}${esc(a.numero)}${problemi ? " ⚠️" : ""}`, "p-numero" + chiaro, fs * 1.3)}
+        ${testo(cx, yMisura, misurata ? `${fmtM(a.larghezza)}×${fmtM(a.lunghezza)}` : "misure?", "p-misura" + chiaro, fs * 0.8)}
       </a>`;
     }).join("");
 
