@@ -1531,7 +1531,7 @@ function vistaOrto(idAiuola) {
     <h2>${scelta ? esc(scelta) : "Le mie aiuole"}</h2>
     ${bottoni}
     ${htmlPianta(scelta)}
-    ${S.aiuole.length <= 1 ? htmlInvitoProva() : ""}
+    ${S.aiuole.length <= 1 && !IN_PROVA ? htmlInvitoProva() : ""}
     ${S.aiuole.length <= 1 ? `<p class="tenue">Crea un'aiuola per ogni pezzo dell'orto: l'app ricorda cosa ci hai coltivato ogni anno e ti avvisa se ripeti la stessa famiglia (rotazione) o metti vicini ortaggi che non vanno d'accordo.</p>` : ""}
     ${carte}
     <div class="riga-bottoni">
