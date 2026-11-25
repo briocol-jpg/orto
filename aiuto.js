@@ -29,6 +29,7 @@ const GUIDA = [
   { ico: "🌱", titolo: "Seminare e piantare", righe: [
     "Apri l'aiuola e tocca <b>＋ Nuova coltura</b>, oppure tocca un quadretto vuoto della scacchiera.",
     "Scegli l'ortaggio: l'app ti dice la <b>prima data utile</b>.",
+    "Copri con il <b>tessuto non tessuto</b>? Scegli 🧣 in <b>Protezione all'inizio</b>: puoi seminare circa 2 settimane prima.",
     "Semi in casa o in vasetti? Mettili nel 🪴 <b>Semenzaio</b>. Quando sono grandi tocca <b>Trapianta</b>.",
     "⚠️ in rosso = vicini che non vanno d'accordo. 🔄 = la stessa famiglia c'era da poco. 🤝 = buoni vicini.",
   ] },

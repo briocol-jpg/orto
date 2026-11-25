@@ -94,7 +94,7 @@ function vociAnnoScorso(anno) {
   for (const i of S.impianti) {
     const a = aiuola(i.aiuolaId), o = PER_ID[i.ortaggioId];
     if (!a || a.semenzaio || !o || !i.data.startsWith(prima) || PERENNI.has(o.id) || i.piano === anno) continue;
-    const serra = a.copertura === "serra", margine = serra ? ANTICIPO_SERRA : 0;
+    const serra = a.copertura === "serra", protezione = i.protezione || "", margine = anticipo(a.id, protezione);
     const modo = i.modo === "tra" ? "tra" : "dir";
     const inizio = nelPeriodo(o, modo, spostaAnni(i.data, 1), margine);
     const origine = i.daSemenzaio && S.impianti.find((x) => x.id === i.daSemenzaio);
@@ -109,7 +109,7 @@ function vociAnnoScorso(anno) {
     const fr = frazione(i, a);
     voci.push({
       k: nuovoId(), ortaggioId: o.id, area: Math.round(fr * areaAiuola(a) * 100) / 100,
-      inizio: aISO(inizio), fine: aISO(fine), modo, semenzaio, serra,
+      inizio: aISO(inizio), fine: aISO(fine), modo, semenzaio, serra, protezione,
       origine: a.id, frazioneOrigine: fr, varieta: i.varieta || "", quantita: i.quantita || "",
       // Caselle dell'anno scorso: nell'aiuola nuova si riprende la stessa disposizione.
       ...(haGriglia(a) && i.celle?.length ? { celleOrigine: celleValide(a, i.celle), grigliaOrigine: grigliaAiuola(a) } : {}),
@@ -650,7 +650,7 @@ function htmlRestano(anno) {
 function htmlListaPiano(P) {
   const righe = P.lista.filter((v) => PER_ID[v.ortaggioId]).map((v) => `<li><div class="riga">
       <span><b>${nomeOrtaggio(v.ortaggioId)}</b>${v.varieta ? ` <span class="tenue">${esc(v.varieta)}</span>` : ""}
-        <br><span class="tenue piccolo">${esc(testoDate(v))}${v.origine && aiuola(v.origine) ? ` · nel ${P.anno - 1} in ${esc(nomeAiuolaId(v.origine))}` : " · aggiunto"}${v.serra ? " · serra" : ""}</span></span>
+        <br><span class="tenue piccolo">${esc(testoDate(v))}${v.origine && aiuola(v.origine) ? ` · nel ${P.anno - 1} in ${esc(nomeAiuolaId(v.origine))}` : " · aggiunto"}${v.serra ? " · serra" : ""}${v.protezione === "tnt" ? " · 🧣 TNT" : ""}</span></span>
       <span style="white-space:nowrap;display:flex;align-items:center;gap:4px">
         <input type="number" min="0.1" step="0.5" value="${String(v.area)}" data-piano-area="${v.k}" style="width:5.2em" aria-label="Spazio in metri quadri"> m²
         <button class="piccolo secondario" data-piano-togli="${v.k}" title="Togli">✕</button>
@@ -803,7 +803,7 @@ function accettaPiano() {
         note: `Dal piano ${P.anno}: trapianto verso il ${fmt(daISO(v.inizio))} in ${nomeAiuolaId(x.aiuolaId)}${x.celle?.length ? " " + testoListaCelle(x.celle) : ""}.`,
         pianoAiuola: x.aiuolaId, pianoCelle: x.celle || [], pianoData: v.inizio });
     } else {
-      S.impianti.push({ id: nuovoId(), ...base, aiuolaId: x.aiuolaId, modo: v.modo, data: v.inizio, celle: x.celle || [], note: `Dal piano ${P.anno}.` });
+      S.impianti.push({ id: nuovoId(), ...base, protezione: v.protezione || "", aiuolaId: x.aiuolaId, modo: v.modo, data: v.inizio, celle: x.celle || [], note: `Dal piano ${P.anno}.` });
     }
   }
   // Una concimazione per aiuola, 3 settimane prima della prima coltura, dosata per la più esigente dei primi 2 mesi.

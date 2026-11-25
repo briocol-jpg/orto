@@ -93,6 +93,10 @@ const ORTAGGI = [
     sem: [["02-15", "08-31"]], dir: [["03-15", "08-31"]], tra: [["03-25", "09-20"]], rac: [["04-25", "11-10"]],
     gg: 50, semTrap: 4, dist: "25 × 30 cm",
     note: "Semine scalari ogni 2–3 settimane. In piena estate usa varietà estive e un po' d'ombra: col caldo va a seme." },
+  { id: "lattughino", nome: "Lattughino (lattuga da taglio)", emoji: "🥬", fam: "composite", esig: "bassa",
+    sem: [], dir: [["03-01", "09-15"]], tra: [], rac: [["04-01", "11-20"]],
+    gg: 35, dist: "file a 10–15 cm, semina fitta",
+    note: "Semina a file o a spaglio e copri appena. Col tessuto non tessuto si semina da metà febbraio ed è pronto per Pasqua. Taglia a 2–3 cm da terra: ricresce 2–3 volte. Semine scalari ogni 3 settimane." },
   { id: "radicchio", nome: "Radicchio", emoji: "🥬", fam: "composite", esig: "media",
     sem: [["06-01", "07-31"]], dir: [["06-01", "07-15"]], tra: [["07-01", "08-31"]], rac: [["09-20", "12-31"]],
     gg: 90, semTrap: 5, dist: "30 × 30 cm",
@@ -162,10 +166,10 @@ const ORTAGGI = [
     sem: [], dir: [], tra: [["08-20", "09-30"], ["03-01", "04-10"]], rac: [["05-15", "07-15"]],
     gg: null, dist: "30 × 40 cm",
     note: "Pianta perenne: rinnova l'impianto ogni 3 anni con gli stoloni. Pacciama con paglia per tenere puliti i frutti." },
-  { id: "valerianella", nome: "Valerianella (songino)", emoji: "🌿", fam: "valerianacee", esig: "bassa",
-    sem: [], dir: [["08-20", "10-10"]], tra: [], rac: [["10-15", "03-31"]],
-    gg: 60, dist: "5 × 15 cm",
-    note: "Si semina a fine estate e si raccoglie tutto l'inverno: resiste al gelo." },
+  { id: "valerianella", nome: "Soncino (valerianella, songino)", emoji: "🌿", fam: "valerianacee", esig: "bassa",
+    sem: [], dir: [["02-01", "04-10"], ["08-15", "10-31"]], tra: [], rac: [["04-01", "05-31"], ["10-15", "03-31"]],
+    gg: 60, dist: "5 × 15 cm, semina fitta",
+    note: "Germina col fresco: semina da fine estate a fine ottobre per l'inverno (resiste al gelo) e da febbraio ad aprile per la primavera; in serra o col tessuto non tessuto anche in pieno inverno. Come lo spinacio, col caldo e le giornate lunghe va subito a fiore: niente semine da maggio a luglio. Copri appena il seme e tieni umido." },
   { id: "cavolonero", nome: "Cavolo nero", emoji: "🥬", fam: "crucifere", esig: "alta",
     sem: [["05-15", "07-10"]], dir: [], tra: [["06-20", "08-10"]], rac: [["10-15", "03-15"]],
     gg: 90, semTrap: 5, dist: "50 × 60 cm",
@@ -307,6 +311,8 @@ const NEMICI = [
   ["aneto", "carota"], ["aneto", "finocchio"],
   ["coriandolo", "finocchio"],
 ];
+// Il lattughino ha gli stessi vicini della lattuga.
+for (const L of [AMICI, NEMICI]) L.push(...L.filter((p) => p.includes("lattuga")).map((p) => p.map((x) => (x === "lattuga" ? "lattughino" : x))));
 
 // Lavori del mese (indice 0 = gennaio).
 const LAVORI_MESE = [
@@ -522,3 +528,5 @@ const PROBLEMI = [
     nonBio: "Concimi minerali a piccole dosi: nitrato di calcio o un concime NPK per orto, sciolti nell'acqua di annaffiatura.",
     previeni: "Concima prima di piantare secondo le esigenze dell'ortaggio, rotazione con le leguminose." },
 ];
+// Il lattughino ha le stesse malattie della lattuga.
+for (const p of PROBLEMI) if (p.colpisce.includes("lattuga")) p.colpisce.push("lattughino");

@@ -220,6 +220,18 @@ const COPERTURE = { "": "All'aperto", serra: "In serra o tunnel" };
 const PACCIAMATURE = { "": "Terra nuda", telo: "Telo di pacciamatura", organica: "Paglia, foglie o erba" };
 const ANTICIPO_SERRA = 21; // giorni: in serra si semina prima e si raccoglie più a lungo
 function inSerra(aiuolaId) { return aiuola(aiuolaId)?.copertura === "serra"; }
+// Protezione di una singola coltura (si mette e si toglie): il tessuto non tessuto
+// tiene 2–3 °C in più e ripara dalle brinate leggere, circa 2 settimane di vantaggio.
+const PROTEZIONI = { "": "Nessuna", tnt: "Tessuto non tessuto (TNT)" };
+const ANTICIPO_TNT = 14;
+function anticipo(aiuolaId, protezione) {
+  return (inSerra(aiuolaId) ? ANTICIPO_SERRA : 0) + (protezione === "tnt" ? ANTICIPO_TNT : 0);
+}
+function testoVantaggio(aiuolaId, protezione) {
+  const v = [inSerra(aiuolaId) ? "della serra" : "", protezione === "tnt" ? "del tessuto non tessuto" : ""].filter(Boolean);
+  return v.length ? ` (contando il vantaggio ${v.join(" e ")})` : "";
+}
+const CONSIGLIO_TNT = "🧣 Tessuto non tessuto: stendilo appena seminato o trapiantato, appoggiato sulle piante o su archetti, coi bordi fermati da terra o sassi. Si annaffia anche attraverso. Nelle giornate calde (sopra 20 °C) aprilo, e toglilo quando le minime restano sopra 8–10 °C o quando la pianta fiorisce (servono gli insetti).";
 // Fila dell'aiuola nella pianta: 0 = principale, positivi dietro (verso il fondo), negativi davanti.
 function filaAiuola(a) {
   if (a.fila === "dietro") return 1; // versione precedente: una sola fila dietro
@@ -570,7 +582,7 @@ function avvisiVicini(aiuolaId, ortaggioId, escludiId, celle) {
   };
 }
 
-function htmlAvvisi(aiuolaId, ortaggioId, dataISO, escludiId, celle) {
+function htmlAvvisi(aiuolaId, ortaggioId, dataISO, escludiId, celle, protezione) {
   if (!aiuolaId || !ortaggioId || !dataISO) return "";
   const o = PER_ID[ortaggioId];
   let h = "";
@@ -584,10 +596,10 @@ function htmlAvvisi(aiuolaId, ortaggioId, dataISO, escludiId, celle) {
   const modo = aiuola(aiuolaId)?.semenzaio ? "sem" : null;
   const fasiOk = modo ? ["sem"] : ["dir", "tra"];
   // In serra si può partire qualche settimana prima e finire dopo.
-  const margine = inSerra(aiuolaId) ? ANTICIPO_SERRA : 0;
+  const margine = anticipo(aiuolaId, protezione);
   const dentro = fasiOk.some((f) => finestreTra(o, f, piuGiorni(d, -margine), piuGiorni(d, margine)).length);
   if (!dentro && fasiOk.some((f) => (o[f] || []).length)) {
-    h += `<div class="avviso">📅 Questa data è fuori dal periodo consigliato per ${esc(o.nome.toLowerCase())}${margine ? ", anche contando 3 settimane di vantaggio della serra" : ""} (guarda il calendario).</div>`;
+    h += `<div class="avviso">📅 Questa data è fuori dal periodo consigliato per ${esc(o.nome.toLowerCase())}${margine ? `, anche contando ${Math.round(margine / 7)} settimane di vantaggio${testoVantaggio(aiuolaId, protezione).replace(" (contando il vantaggio", "").replace(")", "")}` : ""} (guarda il calendario).</div>`;
   }
   return h;
 }
@@ -927,10 +939,10 @@ function modoPredefinito(ortaggioId, aiuolaId) {
 
 // Prima data utile, da oggi in poi, per seminare o trapiantare un ortaggio in un modo
 // ("sem", "dir", "tra"). In serra il periodo si allarga di 3 settimane per parte.
-function primaDataUtile(ortaggioId, modo, aiuolaId) {
+function primaDataUtile(ortaggioId, modo, aiuolaId, protezione) {
   const o = PER_ID[ortaggioId];
   if (!o || !(o[modo] || []).length) return null;
-  const ora = oggi(), m = inSerra(aiuolaId) ? ANTICIPO_SERRA : 0;
+  const ora = oggi(), m = modo === "sem" ? 0 : anticipo(aiuolaId, protezione);
   const fin = finestreTra(o, modo, piuGiorni(ora, -m), piuGiorni(ora, 400))
     .map((f) => ({ inizio: piuGiorni(f.inizio, -m), fine: piuGiorni(f.fine, m) }))
     .filter((f) => f.fine >= ora)
@@ -956,6 +968,7 @@ function moduloImpianto({ aiuolaId, ortaggioId, impianto, celle } = {}) {
       ...campiNuovaAiuola(),
       campoCelle(i?.celle ?? celle),
       { id: "modo", etichetta: "Come", tipo: "select", opzioni: Object.entries(MODI), valore: i?.modo ?? modoPredefinito(ultimoOrtaggio, aiuolaIniziale) },
+      { id: "protezione", etichetta: "Protezione all'inizio", tipo: "select", opzioni: Object.entries(PROTEZIONI), valore: i?.protezione ?? "" },
       { id: "data", etichetta: "Data", tipo: "date", valore: i?.data ?? aISO(oggi()), richiesto: true },
       { id: "varieta", etichetta: "Varietà (facoltativo)", valore: i?.varieta },
       { id: "quantita", etichetta: "Quante piante / file (facoltativo)", valore: i?.quantita },
@@ -975,29 +988,32 @@ function moduloImpianto({ aiuolaId, ortaggioId, impianto, celle } = {}) {
       }
       let proposta = "";
       const modoOra = form.elements.modo.value;
-      const utile = v.ortaggioId ? primaDataUtile(v.ortaggioId, modoOra, v.aiuolaId) : null;
+      const protezione = aiuola(v.aiuolaId)?.semenzaio ? "" : v.protezione;
+      form.querySelector("#w_protezione").hidden = Boolean(aiuola(v.aiuolaId)?.semenzaio);
+      const utile = v.ortaggioId ? primaDataUtile(v.ortaggioId, modoOra, v.aiuolaId, protezione) : null;
       if (dataProposta !== null) {
-        const chiave = `${v.ortaggioId}|${modoOra}|${v.aiuolaId}`;
+        const chiave = `${v.ortaggioId}|${modoOra}|${v.aiuolaId}|${protezione}`;
         if (v.data !== dataProposta) dataProposta = null; // l'hai cambiata tu: non la tocco più
         else if (chiave !== ultimaChiave && utile) form.elements.data.value = dataProposta = aISO(utile.data);
         ultimaChiave = chiave;
       }
       if (utile) {
         const nome = esc(MODI[modoOra].toLowerCase());
-        proposta = `<div class="bene">📅 Prima data utile per ${nome}: <b>${giorniTra(oggi(), utile.data) === 0 ? "da oggi" : "dal " + fmtAnno(utile.data)}</b> fino al ${fmtAnno(utile.fine)}${utile.serra ? " (contando il vantaggio della serra)" : ""}.</div>`;
+        proposta = `<div class="bene">📅 Prima data utile per ${nome}: <b>${giorniTra(oggi(), utile.data) === 0 ? "da oggi" : "dal " + fmtAnno(utile.data)}</b> fino al ${fmtAnno(utile.fine)}${modoOra === "sem" ? "" : esc(testoVantaggio(v.aiuolaId, protezione))}.</div>`;
       } else if (v.ortaggioId) {
         proposta = `<div class="avviso">📅 Per ${esc(PER_ID[v.ortaggioId].nome.toLowerCase())} il calendario non prevede ${esc(MODI[modoOra].toLowerCase())}: prova un altro "Come".</div>`;
       }
       const v2 = { ...v, data: form.elements.data.value };
       const avvisoCelle = aggiornaSceltaCelle(form, v2.aiuolaId, i?.id);
       const celleScelte = form.elements.celle.value.split(",").filter(Boolean);
-      return aggiornaNuovaAiuola(v2, form) + avvisoCelle + proposta + htmlAvvisi(v2.aiuolaId, v2.ortaggioId, v2.data, i?.id, celleScelte);
+      return aggiornaNuovaAiuola(v2, form) + avvisoCelle + proposta + htmlAvvisi(v2.aiuolaId, v2.ortaggioId, v2.data, i?.id, celleScelte, protezione)
+        + (protezione === "tnt" ? `<div class="bene piccolo">${CONSIGLIO_TNT}</div>` : "");
     },
     salva: (v) => {
       v.aiuolaId = aiuolaDaModulo(v);
       togliCampiNuovaAiuola(v);
       v.celle = celleValide(aiuola(v.aiuolaId), v.celle.split(",").filter(Boolean));
-      if (aiuola(v.aiuolaId)?.semenzaio) v.modo = "sem";
+      if (aiuola(v.aiuolaId)?.semenzaio) { v.modo = "sem"; v.protezione = ""; }
       if (i) {
         // Riaperta: non è più finita, via esito e data di fine.
         if (i.finito && !v.finito) { delete i.esito; delete i.dataFine; }
@@ -1034,13 +1050,15 @@ function moduloTrapianto(i) {
       ...campiNuovaAiuola(),
       campoCelle(aiuola(i.pianoAiuola) ? i.pianoCelle : []),
       { id: "data", etichetta: "Data del trapianto", tipo: "date", valore: aISO(oggi()), richiesto: true },
+      { id: "protezione", etichetta: "Protezione all'inizio", tipo: "select", opzioni: Object.entries(PROTEZIONI), valore: i.protezione ?? "" },
       { id: "quantita", etichetta: "Quante piantine", valore: i.quantita },
     ],
     testoSalva: "Trapianta",
     aggiorna: (v, form) => {
       const avvisoCelle = aggiornaSceltaCelle(form, v.aiuolaId, null);
       return aggiornaNuovaAiuola(v, form) + avvisoCelle
-        + htmlAvvisi(v.aiuolaId, i.ortaggioId, v.data, null, form.elements.celle.value.split(",").filter(Boolean));
+        + htmlAvvisi(v.aiuolaId, i.ortaggioId, v.data, null, form.elements.celle.value.split(",").filter(Boolean), v.protezione)
+        + (v.protezione === "tnt" ? `<div class="bene piccolo">${CONSIGLIO_TNT}</div>` : "");
     },
     salva: (v) => {
       if (!v.aiuolaId) return false;
@@ -1051,7 +1069,7 @@ function moduloTrapianto(i) {
       i.esito = "trapiantato";
       S.impianti.push({
         id: nuovoId(), finito: false, ortaggioId: i.ortaggioId, aiuolaId: v.aiuolaId, modo: "tra",
-        data: v.data, varieta: i.varieta, quantita: v.quantita, note: "", daSemenzaio: i.id, celle: celleTrapianto,
+        data: v.data, varieta: i.varieta, quantita: v.quantita, note: "", daSemenzaio: i.id, celle: celleTrapianto, protezione: v.protezione,
         ...(i.piano ? { piano: i.piano } : {}),
       });
     },
@@ -1786,9 +1804,9 @@ function vistaAiuola(a) {
   const htmlAttivi = attivi.length ? `<ul class="elenco">${attivi.map((i) => {
     const o = PER_ID[i.ortaggioId];
     const stime = stimeImpianto(i).map((s) => `${FASI[s.tipo].breve} ~${fmt(s.data)}`).join(" · ");
-    const avv = htmlAvvisi(a.id, i.ortaggioId, i.data, i.id, i.celle).replace(/<div class="avviso">📅[^<]*<\/div>/, "");
+    const avv = htmlAvvisi(a.id, i.ortaggioId, i.data, i.id, i.celle, i.protezione).replace(/<div class="avviso">📅[^<]*<\/div>/, "");
     return `<li>
-      <div><b>${icona(o)} ${esc(o.nome)}</b>${i.varieta ? ` <span class="tenue">${esc(i.varieta)}</span>` : ""}${i.celle?.length ? ` · <b>${esc(testoCelle(i))}</b>` : ""}</div>
+      <div><b>${icona(o)} ${esc(o.nome)}</b>${i.varieta ? ` <span class="tenue">${esc(i.varieta)}</span>` : ""}${i.celle?.length ? ` · <b>${esc(testoCelle(i))}</b>` : ""}${i.protezione === "tnt" ? " · 🧣 TNT" : ""}</div>
       <div class="tenue piccolo">${esc(MODI[i.modo] ?? "")} il ${fmt(daISO(i.data))}${i.quantita ? " · " + esc(i.quantita) : ""}${stime ? " · previsti: " + stime : ""}</div>
       ${i.note ? `<div class="piccolo">${esc(i.note)}</div>` : ""}
       ${avv}
