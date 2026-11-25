@@ -735,6 +735,8 @@ function moduloAiuola(a) {
       { id: "nome", etichetta: "Nome (facoltativo, es. Lungo il muro)", valore: a?.nome },
       { id: "larghezza", etichetta: "Larghezza in metri (da sinistra a destra)", tipo: "number", passo: "0.05", valore: a?.larghezza },
       { id: "lunghezza", etichetta: "Lunghezza in metri (dal fondo verso di te)", tipo: "number", passo: "0.05", valore: a?.lunghezza },
+      { id: "fila", etichetta: "Dove sta", tipo: "select", opzioni: [["", "In fila con le altre"], ["dietro", "Dietro le altre, verso il fondo (seconda fila)"]], valore: a?.fila ?? "" },
+      { id: "inizio", etichetta: "Distanza dal bordo sinistro dell'orto, in metri (facoltativo)", tipo: "number", passo: "0.05", valore: a?.inizio },
       { id: "copertura", etichetta: "All'aperto o in serra", tipo: "select", opzioni: Object.entries(COPERTURE), valore: a?.copertura ?? "" },
       { id: "pacciamatura", etichetta: "Pacciamatura", tipo: "select", opzioni: Object.entries(PACCIAMATURE), valore: a?.pacciamatura ?? "" },
       { id: "fissa", etichetta: "Sempre lo stesso ortaggio, ogni anno (non si ruota: es. zucca che sale sul tetto)", tipo: "select",
@@ -760,6 +762,7 @@ function moduloAiuola(a) {
         zona: v.zona, numero: Number(v.numero), nome: v.nome, note: v.note,
         larghezza: numeroMisura(v.larghezza), lunghezza: numeroMisura(v.lunghezza),
         copertura: v.copertura, pacciamatura: v.pacciamatura, fissa: v.fissa,
+        fila: v.fila, inizio: numeroMisura(v.inizio),
         ...grigliaAiuola({ righe: v.righe, colonne: v.colonne }),
       };
       const doppia = S.aiuole.some((x) => x !== a && !x.semenzaio && (x.zona || ZONA_PREDEFINITA) === v.zona && String(x.numero) === v.numero);
@@ -1520,20 +1523,30 @@ function htmlPianta(soloZona) {
     const mediaH = misurate.length ? misurate.reduce((s, a) => s + a.lunghezza, 0) / misurate.length : 2;
     const corridoio = corridoioZona(zona);
     // Coordinate locali: x lungo la fila (aiuola 1 a sinistra), y dal fondo (0) verso il davanti.
-    let x = 0;
-    const pezzi = lista.map((a) => {
-      const w = a.larghezza || mediaL, h = a.lunghezza || mediaH;
-      const p = { a, x, w, h, misurata: Boolean(a.larghezza && a.lunghezza) };
-      x += w + corridoio;
-      return p;
-    });
-    const larghezzaTot = x - corridoio;
+    // Le aiuole con fila "dietro" stanno in una seconda fila, oltre il fondo della principale;
+    // "inizio" (metri dal bordo sinistro) le mette in un punto preciso della fila.
+    const dietro = lista.some((a) => a.fila === "dietro");
+    const posiziona = (spazio) => {
+      const fine = { dietro: 0, davanti: 0 };
+      const righe = lista.map((a) => {
+        const f = a.fila === "dietro" ? "dietro" : "davanti";
+        const w = a.larghezza || mediaL, h = a.lunghezza || mediaH;
+        const x = a.inizio != null && a.inizio !== "" ? Math.max(0, Number(a.inizio)) : fine[f];
+        fine[f] = x + w + corridoio;
+        return { a, f, x, w, h, misurata: Boolean(a.larghezza && a.lunghezza) };
+      });
+      const hDietro = Math.max(0, ...righe.filter((q) => q.f === "dietro").map((q) => q.h));
+      righe.forEach((q) => { q.y = q.f === "dietro" || !dietro ? 0 : hDietro + spazio; });
+      return righe;
+    };
+    let pezzi = posiziona(corridoio);
+    const larghezzaTot = Math.max(...pezzi.map((q) => q.x + q.w));
 
     // Orientamento: la fila va nella direzione della bussola "direzione" (gradi).
     const or = orientamentoZona(zona);
     const T = (px, py) => [px * or.cos - py * or.s * or.sin, px * or.sin + py * or.s * or.cos];
     const angoli = (px, py, w, h) => [T(px, py), T(px + w, py), T(px + w, py + h), T(px, py + h)];
-    const tutti = pezzi.flatMap((q) => angoli(q.x, 0, q.w, q.h));
+    let tutti = pezzi.flatMap((q) => angoli(q.x, q.y, q.w, q.h));
     const box0 = limiti(tutti);
 
     // Scala in pixel per metro: il disegno occupa la larghezza disponibile (circa 360 px
@@ -1542,6 +1555,11 @@ function htmlPianta(soloZona) {
     const scala = Math.min(PX_PER_METRO, disponibile / Math.max(box0.w, 0.5));
     const lati = pezzi.map((q) => Math.min(q.w, q.h)).sort((m, n) => m - n);
     const fs = Math.min(15 / scala, Math.max(10 / scala, lati[Math.floor(lati.length / 2)] / 4)); // testo in metri
+    // Tra le due file serve posto per le misure di quella dietro e i numeri di quella davanti.
+    if (dietro) {
+      pezzi = posiziona(Math.max(corridoio, fs * 3.3));
+      tutti = pezzi.flatMap((q) => angoli(q.x, q.y, q.w, q.h));
+    }
     const testo = (px, py, contenuto, classe, size) => {
       const [tx, ty] = T(px, py);
       return `<text class="${classe}" x="${tx}" y="${ty}" font-size="${size}" text-anchor="middle" dominant-baseline="central">${contenuto}</text>`;
@@ -1551,13 +1569,13 @@ function htmlPianta(soloZona) {
     const punti = (l) => l.map(([px, py]) => `${px},${py}`).join(" ");
 
     const etichette = [];
-    const disegno = pezzi.map(({ a, x, w, h, misurata }) => {
+    const disegno = pezzi.map(({ a, x, y, w, h, misurata }) => {
       const attivi = impiantiAttivi(a.id);
       const problemi = attivi.some((i) => avvisiRotazione(a.id, i.ortaggioId, i.data, i.id, i.celle).length
         || avvisiVicini(a.id, i.ortaggioId, i.id, i.celle).cattivi.length);
       const e = fs * 1.25; // lato di un'emoji
       const perRiga = Math.max(1, Math.floor((w - fs * 0.3) / e));
-      const righe = Math.max(0, Math.floor((h - fs * 2.2) / e));
+      const righe = Math.max(0, Math.floor((h - fs * 0.6) / e));
       const tutte = attivi.map((i) => PER_ID[i.ortaggioId]);
       const posti = perRiga * righe;
       const emoji = tutte.length > posti ? [...tutte.slice(0, Math.max(0, posti - 1)), `+${tutte.length - Math.max(0, posti - 1)}`] : tutte;
@@ -1570,44 +1588,44 @@ function htmlPianta(soloZona) {
         const cw = w / g.colonne, ch = h / g.righe;
         const seg = (x1, y1, x2, y2) => { const [p1, p2] = [T(x1, y1), T(x2, y2)]; return `<line class="p-griglia" x1="${p1[0]}" y1="${p1[1]}" x2="${p2[0]}" y2="${p2[1]}" stroke-width="${fs * 0.06}"/>`; };
         // Linee solo se le caselle sono abbastanza grandi da vederle (almeno 5 px).
-        if (cw * scala >= 5) for (let c = 1; c < g.colonne; c++) linee += seg(x + c * cw, 0, x + c * cw, h);
-        if (ch * scala >= 5) for (let r = 1; r < g.righe; r++) linee += seg(x, r * ch, x + w, r * ch);
+        if (cw * scala >= 5) for (let c = 1; c < g.colonne; c++) linee += seg(x + c * cw, y, x + c * cw, y + h);
+        if (ch * scala >= 5) for (let r = 1; r < g.righe; r++) linee += seg(x, y + r * ch, x + w, y + r * ch);
         const occ = occupazione(a.id), manca = celleMancanti(a);
         const libere = [];
         const dim = Math.min(e * 0.85, Math.min(cw, ch) * 0.7);
         for (let r = 0; r < g.righe; r++) for (let c = 0; c < g.colonne; c++) {
           const n = nomeCella(r, c);
           if (manca.has(n)) continue;
-          if (occ[n]) testi += iconaPianta(x + (c + 0.5) * cw, (r + 0.5) * ch, PER_ID[occ[n][0].ortaggioId], dim);
+          if (occ[n]) testi += iconaPianta(x + (c + 0.5) * cw, y + (r + 0.5) * ch, PER_ID[occ[n][0].ortaggioId], dim);
           else libere.push([r, c]);
         }
         // Colture su tutta l'aiuola: nelle caselle libere.
         impiantiAttivi(a.id).filter((i) => !i.celle?.length).forEach((i, k) => {
           if (!libere[k]) return;
           const [r, c] = libere[k];
-          testi += iconaPianta(x + (c + 0.5) * cw, (r + 0.5) * ch, PER_ID[i.ortaggioId], dim);
+          testi += iconaPianta(x + (c + 0.5) * cw, y + (r + 0.5) * ch, PER_ID[i.ortaggioId], dim);
         });
       } else {
         testi = (posti ? emoji : []).map((em, k) => {
           const px = cx + ((k % perRiga) - (Math.min(perRiga, emoji.length) - 1) / 2) * e;
-          const py = fs * 2.3 + Math.floor(k / perRiga) * e + e * 0.5;
+          const py = y + fs * 0.3 + Math.floor(k / perRiga) * e + e * 0.5;
           return typeof em === "string" ? testo(px, py, em, "p-emoji", e * 0.85) : iconaPianta(px, py, em, e * 0.85);
         }).join("");
       }
-      // Con la scacchiera il numero va fuori, oltre il fondo, per non coprire le caselle.
-      const yNumero = griglia ? -fs * 0.9 : fs * 1.1;
-      if (griglia) etichette.push(T(cx, yNumero - fs * 0.6));
-      const pos = T(cx, h + fs * 1.1);
+      // Il numero va sempre fuori, oltre il fondo: tutte le aiuole uguali e niente coperto.
+      const yNumero = y - fs * 0.9;
+      etichette.push(T(cx, yNumero - fs * 0.6));
+      const pos = T(cx, y + h + fs * 1.1);
       etichette.push(pos);
       const d = fs * 0.15;
       return `<a href="#orto/${a.id}">
         <title>${esc(nomeAiuola(a))}${misurata ? " · " + esc(misureAiuola(a)) : ""}</title>
-        <polygon class="p-aiuola${misurata ? "" : " p-senza"}${a.pacciamatura ? " p-" + a.pacciamatura : ""}" points="${punti(angoli(x, 0, w, h))}"/>
-        ${a.copertura === "serra" ? `<polygon class="p-serra" points="${punti(angoli(x + d, d, Math.max(0, w - 2 * d), Math.max(0, h - 2 * d)))}"/>` : ""}
+        <polygon class="p-aiuola${misurata ? "" : " p-senza"}${a.pacciamatura ? " p-" + a.pacciamatura : ""}" points="${punti(angoli(x, y, w, h))}"/>
+        ${a.copertura === "serra" ? `<polygon class="p-serra" points="${punti(angoli(x + d, y + d, Math.max(0, w - 2 * d), Math.max(0, h - 2 * d)))}"/>` : ""}
         ${linee}
-        ${testo(cx, yNumero, `${a.copertura === "serra" ? "🏠" : ""}${esc(a.numero)}${problemi ? " ⚠️" : ""}`, `p-numero${a.pacciamatura === "telo" && !griglia ? " p-chiaro" : ""}`, fs * 1.3)}
+        ${testo(cx, yNumero, `${a.copertura === "serra" ? "🏠" : ""}${esc(a.numero)}${problemi ? " ⚠️" : ""}`, "p-numero", fs * 1.3)}
         ${testi}
-        ${testo(cx, h + fs * 1.1, misurata ? `${fmtM(a.larghezza)}×${fmtM(a.lunghezza)}` : "misure?", "p-misura", fs * 0.8)}
+        ${testo(cx, y + h + fs * 1.1, misurata ? `${fmtM(a.larghezza)}×${fmtM(a.lunghezza)}` : "misure?", "p-misura", fs * 0.8)}
       </a>`;
     }).join("");
 
@@ -1631,7 +1649,7 @@ function htmlPianta(soloZona) {
       ${legendaPianta(lista)}
       ${consiglioSole(zona, lista)}
       <p class="tenue piccolo">${or.attivo ? `La fila va ${esc(DIREZIONI_TESTO(or.gradi))}.` : "Disegno dritto: l'orientamento della zona non è indicato."}
-      Aiuole in ordine di numero, ${corridoio ? `con vialetti di ${Math.round(corridoio * 100)} cm` : "senza vialetti"}. Lunghezza totale circa ${fmtM(larghezzaTot)} m${superficie ? ` · ${fmtM(superficie)} m² coltivati` : ""}.
+      Aiuole in ordine di numero${dietro ? ", in due file (la seconda dietro, verso il fondo)" : ""}, ${corridoio ? `con vialetti di ${Math.round(corridoio * 100)} cm` : "senza vialetti"}. Lunghezza totale circa ${fmtM(larghezzaTot)} m${superficie ? ` · ${fmtM(superficie)} m² coltivati` : ""}.
       ${misurate.length < lista.length ? "Le aiuole tratteggiate non hanno ancora le misure: toccale e premi «Modifica aiuola» per inserirle." : ""} Tocca un'aiuola per aprirla.</p>
       <button class="piccolo secondario" data-zona="${esc(zona)}">⚙️ Nome, vialetti, orientamento, numeri</button>
     </section>`;

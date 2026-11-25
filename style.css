@@ -305,7 +305,6 @@ svg.pianta a { cursor: pointer; }
 .p-aiuola.p-telo { fill: #3d3d3d; stroke: #1f1f1f; }
 .p-aiuola.p-organica { fill: #d8bf7a; stroke: #8c7536; }
 .p-serra { fill: rgba(170, 215, 235, 0.45); stroke: #6aa9c4; stroke-width: 0.04; pointer-events: none; }
-.p-numero.p-chiaro { fill: #f3f3f3; }
 .legenda i.l-terra { background: #c8a477; }
 .legenda i.l-telo { background: #3d3d3d; }
 .legenda i.l-organica { background: #d8bf7a; }
