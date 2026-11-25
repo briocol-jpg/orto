@@ -220,6 +220,16 @@ const COPERTURE = { "": "All'aperto", serra: "In serra o tunnel" };
 const PACCIAMATURE = { "": "Terra nuda", telo: "Telo di pacciamatura", organica: "Paglia, foglie o erba" };
 const ANTICIPO_SERRA = 21; // giorni: in serra si semina prima e si raccoglie più a lungo
 function inSerra(aiuolaId) { return aiuola(aiuolaId)?.copertura === "serra"; }
+// Fila dell'aiuola nella pianta: 0 = principale, positivi dietro (verso il fondo), negativi davanti.
+function filaAiuola(a) {
+  if (a.fila === "dietro") return 1; // versione precedente: una sola fila dietro
+  return Number(a.fila) || 0;
+}
+const OPZIONI_FILA = [
+  ["3", "3ª fila dietro (verso il fondo)"], ["2", "2ª fila dietro"], ["1", "1ª fila dietro"],
+  ["0", "Fila principale"],
+  ["-1", "1ª fila davanti (verso di te)"], ["-2", "2ª fila davanti"], ["-3", "3ª fila davanti"],
+];
 function corridoioZona(zona) {
   const c = S.zone?.[zona]?.corridoio;
   return c == null ? CORRIDOIO : c;
@@ -735,7 +745,7 @@ function moduloAiuola(a) {
       { id: "nome", etichetta: "Nome (facoltativo, es. Lungo il muro)", valore: a?.nome },
       { id: "larghezza", etichetta: "Larghezza in metri (da sinistra a destra)", tipo: "number", passo: "0.05", valore: a?.larghezza },
       { id: "lunghezza", etichetta: "Lunghezza in metri (dal fondo verso di te)", tipo: "number", passo: "0.05", valore: a?.lunghezza },
-      { id: "fila", etichetta: "Dove sta", tipo: "select", opzioni: [["", "In fila con le altre"], ["dietro", "Dietro le altre, verso il fondo (seconda fila)"]], valore: a?.fila ?? "" },
+      { id: "fila", etichetta: "In quale fila sta", tipo: "select", opzioni: OPZIONI_FILA, valore: String(filaAiuola(a || {})) },
       { id: "inizio", etichetta: "Distanza dal bordo sinistro dell'orto, in metri (facoltativo)", tipo: "number", passo: "0.05", valore: a?.inizio },
       { id: "copertura", etichetta: "All'aperto o in serra", tipo: "select", opzioni: Object.entries(COPERTURE), valore: a?.copertura ?? "" },
       { id: "pacciamatura", etichetta: "Pacciamatura", tipo: "select", opzioni: Object.entries(PACCIAMATURE), valore: a?.pacciamatura ?? "" },
@@ -762,7 +772,7 @@ function moduloAiuola(a) {
         zona: v.zona, numero: Number(v.numero), nome: v.nome, note: v.note,
         larghezza: numeroMisura(v.larghezza), lunghezza: numeroMisura(v.lunghezza),
         copertura: v.copertura, pacciamatura: v.pacciamatura, fissa: v.fissa,
-        fila: v.fila, inizio: numeroMisura(v.inizio),
+        fila: Number(v.fila) || 0, inizio: numeroMisura(v.inizio),
         ...grigliaAiuola({ righe: v.righe, colonne: v.colonne }),
       };
       const doppia = S.aiuole.some((x) => x !== a && !x.semenzaio && (x.zona || ZONA_PREDEFINITA) === v.zona && String(x.numero) === v.numero);
@@ -1523,20 +1533,25 @@ function htmlPianta(soloZona) {
     const mediaH = misurate.length ? misurate.reduce((s, a) => s + a.lunghezza, 0) / misurate.length : 2;
     const corridoio = corridoioZona(zona);
     // Coordinate locali: x lungo la fila (aiuola 1 a sinistra), y dal fondo (0) verso il davanti.
-    // Le aiuole con fila "dietro" stanno in una seconda fila, oltre il fondo della principale;
-    // "inizio" (metri dal bordo sinistro) le mette in un punto preciso della fila.
-    const dietro = lista.some((a) => a.fila === "dietro");
+    // Più file: 0 = principale, 1, 2… dietro (verso il fondo), -1, -2… davanti (verso di te).
+    // "inizio" (metri dal bordo sinistro) mette l'aiuola in un punto preciso della sua fila.
+    const file = [...new Set(lista.map(filaAiuola))].sort((m, n) => n - m); // dal fondo al davanti
+    const dietro = file.length > 1;
     const posiziona = (spazio) => {
-      const fine = { dietro: 0, davanti: 0 };
+      const fine = {};
       const righe = lista.map((a) => {
-        const f = a.fila === "dietro" ? "dietro" : "davanti";
+        const f = filaAiuola(a);
         const w = a.larghezza || mediaL, h = a.lunghezza || mediaH;
-        const x = a.inizio != null && a.inizio !== "" ? Math.max(0, Number(a.inizio)) : fine[f];
+        const x = a.inizio != null && a.inizio !== "" ? Math.max(0, Number(a.inizio)) : (fine[f] || 0);
         fine[f] = x + w + corridoio;
         return { a, f, x, w, h, misurata: Boolean(a.larghezza && a.lunghezza) };
       });
-      const hDietro = Math.max(0, ...righe.filter((q) => q.f === "dietro").map((q) => q.h));
-      righe.forEach((q) => { q.y = q.f === "dietro" || !dietro ? 0 : hDietro + spazio; });
+      let y = 0;
+      for (const f of file) {
+        const questa = righe.filter((q) => q.f === f);
+        questa.forEach((q) => { q.y = y; });
+        y += Math.max(...questa.map((q) => q.h)) + spazio;
+      }
       return righe;
     };
     let pezzi = posiziona(corridoio);
@@ -1649,7 +1664,7 @@ function htmlPianta(soloZona) {
       ${legendaPianta(lista)}
       ${consiglioSole(zona, lista)}
       <p class="tenue piccolo">${or.attivo ? `La fila va ${esc(DIREZIONI_TESTO(or.gradi))}.` : "Disegno dritto: l'orientamento della zona non è indicato."}
-      Aiuole in ordine di numero${dietro ? ", in due file (la seconda dietro, verso il fondo)" : ""}, ${corridoio ? `con vialetti di ${Math.round(corridoio * 100)} cm` : "senza vialetti"}. Lunghezza totale circa ${fmtM(larghezzaTot)} m${superficie ? ` · ${fmtM(superficie)} m² coltivati` : ""}.
+      Aiuole in ordine di numero${dietro ? `, in ${file.length} file` : ""}, ${corridoio ? `con vialetti di ${Math.round(corridoio * 100)} cm` : "senza vialetti"}. Lunghezza totale circa ${fmtM(larghezzaTot)} m${superficie ? ` · ${fmtM(superficie)} m² coltivati` : ""}.
       ${misurate.length < lista.length ? "Le aiuole tratteggiate non hanno ancora le misure: toccale e premi «Modifica aiuola» per inserirle." : ""} Tocca un'aiuola per aprirla.</p>
       <button class="piccolo secondario" data-zona="${esc(zona)}">⚙️ Nome, vialetti, orientamento, numeri</button>
     </section>`;

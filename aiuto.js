@@ -17,7 +17,7 @@ const GUIDA = [
     "Vai in 🌱 Orto e tocca <b>＋ Nuova aiuola</b>.",
     "Scrivi il numero (da sinistra a destra) e le misure in metri.",
     "Vuoi dividerla in quadretti? Metti righe e colonne: è la <b>scacchiera</b>.",
-    "Un'aiuola sta dietro le altre, verso il fondo? In ✏️ Modifica aiuola, a <b>Dove sta</b>, scegli <b>Dietro le altre</b> e scrivi a quanti metri dal bordo sinistro comincia.",
+    "Aiuole su più file, una davanti all'altra? In ✏️ Modifica aiuola scegli <b>In quale fila sta</b> (dietro = verso il fondo, davanti = verso di te) e scrivi a quanti metri dal bordo sinistro comincia.",
     "Qualche quadretto non c'è davvero (vasi a piramide)? Sotto la scacchiera tocca <b>✕ Caselle che non esistono</b>.",
     "Un'aiuola dove metti sempre la stessa pianta (la zucca sul tetto)? In ✏️ Modifica aiuola scegli <b>Sempre lo stesso ortaggio</b> 📌.",
   ] },
