@@ -389,9 +389,45 @@ function intestazioneGriglia(g) {
   for (let c = 0; c < g.colonne; c++) h += `<span class="intest col">${c + 1}</span>`;
   return h;
 }
+// Caselle che non esistono (aiuola non rettangolare, es. vasi a piramide): a.celleMancanti.
+function celleMancanti(a) { return new Set(a?.celleMancanti || []); }
 function celleValide(a, celle) {
+  const g = grigliaAiuola(a), via = celleMancanti(a);
+  return haGriglia(a) ? (celle || []).filter((x) => { const q = cellaRC(x); return q.r >= 0 && q.r < g.righe && q.c >= 0 && q.c < g.colonne && !via.has(x); }) : [];
+}
+function moduloCelleMancanti(a) {
   const g = grigliaAiuola(a);
-  return haGriglia(a) ? (celle || []).filter((x) => { const q = cellaRC(x); return q.r >= 0 && q.r < g.righe && q.c >= 0 && q.c < g.colonne; }) : [];
+  const via = celleMancanti(a);
+  const disegnaGriglia = () => {
+    let h = `<div class="scorri-scacchiera">${intestazioneGriglia(g)}`;
+    for (let r = 0; r < g.righe; r++) {
+      h += `<span class="intest riga">${nomeRiga(r)}</span>`;
+      for (let c = 0; c < g.colonne; c++) {
+        const n = nomeCella(r, c);
+        h += `<button type="button" class="cella${via.has(n) ? " mancante" : ""}" data-manca="${n}" title="${n}">${via.has(n) ? "✕" : n}</button>`;
+      }
+    }
+    return h + `</div></div><p class="tenue piccolo">Caselle vere: <b>${g.righe * g.colonne - via.size}</b> su ${g.righe * g.colonne}.</p>`;
+  };
+  apriFinestra(`<h2>Caselle che non esistono</h2>
+    <p class="tenue piccolo">Tocca le caselle della scacchiera che nell'aiuola non ci sono (per esempio vasi disposti a piramide): diventano ✕ e l'app non ci propone niente. Tocca di nuovo per rimetterle.</p>
+    <div id="g_manca">${disegnaGriglia()}</div>
+    <div class="riga-bottoni"><button type="button" id="manca-salva">Salva</button><button type="button" class="secondario" data-chiudi>Annulla</button></div>`, (f) => {
+    f.querySelector("#g_manca").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-manca]");
+      if (!b) return;
+      const n = b.dataset.manca;
+      if (via.has(n)) via.delete(n); else via.add(n);
+      f.querySelector("#g_manca").innerHTML = disegnaGriglia();
+    });
+    f.querySelector("#manca-salva").addEventListener("click", () => {
+      a.celleMancanti = ordinaCelle([...via]);
+      if (via.size >= g.righe * g.colonne) a.celleMancanti = [];
+      for (const i of S.impianti) if (i.aiuolaId === a.id && i.celle?.length) i.celle = celleValide(a, i.celle);
+      salva_e_ridisegna();
+      chiudiFinestra();
+    });
+  });
 }
 function ordinaCelle(celle) {
   return [...celle].sort((x, y) => { const p = cellaRC(x), q = cellaRC(y); return p.r - q.r || p.c - q.c; });
@@ -455,6 +491,7 @@ function aggiornaSceltaCelle(form, aiuolaId, escludiId) {
   contenitore.hidden = false;
   const g = grigliaAiuola(a);
   const scelte = new Set(celleValide(a, form.elements.celle.value.split(",").filter(Boolean)));
+  const manca = celleMancanti(a);
   form.elements.celle.value = [...scelte].join(",");
   const occ = occupazione(aiuolaId, escludiId);
   const rett = form.dataset.rettangolo === "1", angolo = form.dataset.angolo || "";
@@ -467,6 +504,7 @@ function aggiornaSceltaCelle(form, aiuolaId, escludiId) {
     h += `<span class="intest riga">${nomeRiga(r)}</span>`;
     for (let c = 0; c < g.colonne; c++) {
       const n = nomeCella(r, c);
+      if (manca.has(n)) { h += `<span class="cella mancante" title="${n}: non esiste"></span>`; continue; }
       const chi = (occ[n] || []).map((i) => icona(PER_ID[i.ortaggioId])).join("");
       h += `<button type="button" class="cella${scelte.has(n) ? " scelta" : ""}${n === angolo ? " angolo" : ""}" data-cella="${n}" title="${n}">${scelte.has(n) ? "✓" : chi || n}</button>`;
     }
@@ -1534,11 +1572,12 @@ function htmlPianta(soloZona) {
         // Linee solo se le caselle sono abbastanza grandi da vederle (almeno 5 px).
         if (cw * scala >= 5) for (let c = 1; c < g.colonne; c++) linee += seg(x + c * cw, 0, x + c * cw, h);
         if (ch * scala >= 5) for (let r = 1; r < g.righe; r++) linee += seg(x, r * ch, x + w, r * ch);
-        const occ = occupazione(a.id);
+        const occ = occupazione(a.id), manca = celleMancanti(a);
         const libere = [];
         const dim = Math.min(e * 0.85, Math.min(cw, ch) * 0.7);
         for (let r = 0; r < g.righe; r++) for (let c = 0; c < g.colonne; c++) {
           const n = nomeCella(r, c);
+          if (manca.has(n)) continue;
           if (occ[n]) testi += iconaPianta(x + (c + 0.5) * cw, (r + 0.5) * ch, PER_ID[occ[n][0].ortaggioId], dim);
           else libere.push([r, c]);
         }
@@ -1683,7 +1722,7 @@ function suggerimentiAiuola(a) {
 function htmlScacchiera(a) {
   if (!haGriglia(a)) return "";
   const g = grigliaAiuola(a);
-  const occ = occupazione(a.id);
+  const occ = occupazione(a.id), manca = celleMancanti(a);
   const tutta = impiantiAttivi(a.id).filter((i) => !i.celle?.length);
   const fitta = grigliaFitta(g);
   let h = `<div class="scorri-scacchiera">${intestazioneGriglia(g).replace('class="scacchiera', 'class="scacchiera grande')}`;
@@ -1691,6 +1730,7 @@ function htmlScacchiera(a) {
     h += `<span class="intest riga">${nomeRiga(r)}</span>`;
     for (let c = 0; c < g.colonne; c++) {
       const n = nomeCella(r, c);
+      if (manca.has(n)) { h += `<span class="cella mancante" title="${n}: non esiste"></span>`; continue; }
       const chi = occ[n] || [];
       h += chi.length
         ? `<button type="button" class="cella piena" data-modifica-imp="${chi[0].id}" title="${n} · ${esc(chi.map((i) => PER_ID[i.ortaggioId]?.nome ?? "").join(", "))}"><span class="em">${chi.map((i) => icona(PER_ID[i.ortaggioId])).join("")}</span>${fitta ? "" : `<span class="nome">${esc(chi.map((i) => PER_ID[i.ortaggioId]?.nome ?? "").join(", "))}</span>`}</button>`
@@ -1699,9 +1739,10 @@ function htmlScacchiera(a) {
   }
   h += `</div></div>`;
   const misura = misuraCasella(a);
-  return `<section class="carta"><h3 style="margin-top:0">Scacchiera ${g.righe} × ${g.colonne}${misura ? ` <span class="tenue piccolo">· ${misura}</span>` : ""}</h3>${h}
+  return `<section class="carta"><h3 style="margin-top:0">Scacchiera ${g.righe} × ${g.colonne}${manca.size ? ` <span class="tenue piccolo">· ${g.righe * g.colonne - manca.size} caselle vere</span>` : ""}${misura ? ` <span class="tenue piccolo">· ${misura}</span>` : ""}</h3>${h}
     <p class="tenue piccolo">Righe a, b, c… dal fondo verso di te; colonne 1, 2, 3… da sinistra a destra. Tocca una casella vuota per piantarci, una piena per modificarla.
-    ${tutta.length ? `Su tutta l'aiuola: ${tutta.map((i) => nomeOrtaggio(i.ortaggioId)).join(", ")}.` : ""}</p></section>`;
+    ${tutta.length ? `Su tutta l'aiuola: ${tutta.map((i) => nomeOrtaggio(i.ortaggioId)).join(", ")}.` : ""}</p>
+    <div class="riga-bottoni"><button type="button" class="piccolo secondario" data-celle-mancanti="${a.id}">✕ Caselle che non esistono${manca.size ? ` (${manca.size})` : ""}</button></div></section>`;
 }
 
 function vistaAiuola(a) {
@@ -1865,7 +1906,8 @@ function vistaLuogo() {
       </div>
       <p class="tenue piccolo">Promemoria: scarica un file di calendario (.ics) con le attività segnate nel diario con una data futura (con un avviso una settimana prima), i trapianti e le raccolte previsti e l'inizio delle semine dei tuoi ortaggi ★ per i prossimi 12 mesi. Aprilo con l'app Calendario o importalo in Google Calendar dal computer.</p>
       <div class="riga-bottoni"><button class="secondario" id="ics">📅 Scarica promemoria (.ics)</button></div>
-    </section>`;
+    </section>
+    <p><a class="bottone secondario" href="#aiuto">❓ Come si usa l'app</a></p>`;
 }
 
 function statoLuogo(html) {
@@ -2225,7 +2267,7 @@ function esportaIcs() {
 function rotta() {
   const h = location.hash.replace(/^#/, "") || "oggi";
   const [vista, param] = h.split("/");
-  return { vista: ["oggi", "calendario", "orto", "diario", "luogo", "piano"].includes(vista) ? vista : "oggi", param };
+  return { vista: ["oggi", "calendario", "orto", "diario", "luogo", "piano", "aiuto"].includes(vista) ? vista : "oggi", param };
 }
 
 // Se la finestra cambia molto di larghezza (PC, telefono girato), ridisegno la pianta.
@@ -2247,7 +2289,7 @@ function disegna() {
   document.querySelectorAll(".schede a").forEach((a) => a.classList.toggle("attiva", a.dataset.vista === (vista === "piano" ? "orto" : vista)));
 
   document.body.dataset.vista = vista; // sul PC la scheda Orto è più larga (vedi style.css)
-  const viste = { oggi: vistaOggi, calendario: vistaCalendario, orto: () => vistaOrto(param), diario: vistaDiario, luogo: vistaLuogo, piano: vistaPiano };
+  const viste = { oggi: vistaOggi, calendario: vistaCalendario, orto: () => vistaOrto(param), diario: vistaDiario, luogo: vistaLuogo, piano: vistaPiano, aiuto: vistaAiuto };
   const scroll = window.scrollY;
   app.innerHTML = viste[vista]();
   if (disegna.ultima === location.hash) window.scrollTo(0, scroll);
@@ -2270,6 +2312,7 @@ function collega(root) {
   su("[data-fine]", (b) => chiudiImpianto(imp(b.dataset.fine)));
   su("[data-modifica-ev]", (b) => moduloEvento({ evento: S.eventi.find((e) => e.id === b.dataset.modificaEv) }));
   su("#nuova-aiuola", () => moduloAiuola());
+  su("[data-celle-mancanti]", (b) => moduloCelleMancanti(aiuola(b.dataset.celleMancanti)));
   su("#piu-aiuole", () => moduloPiuAiuole());
   su("[data-zona-vista]", (b) => { S.impostazioni.zonaVista = b.dataset.zonaVista; salva_e_ridisegna(); });
   su("[data-zona]", (b) => moduloZona(b.dataset.zona));

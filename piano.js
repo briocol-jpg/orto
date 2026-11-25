@@ -37,10 +37,10 @@ function areaMediana() {
   return note.length ? note[Math.floor(note.length / 2)] : 1;
 }
 function areaAiuola(a) { return a?.larghezza && a?.lunghezza ? a.larghezza * a.lunghezza : areaMediana(); }
-function celleTotali(a) { const g = grigliaAiuola(a); return g.righe * g.colonne; }
+function celleTotali(a) { return Math.max(1, tutteLeCelle(a).length); }
 function tutteLeCelle(a) {
-  const g = grigliaAiuola(a), out = [];
-  for (let r = 0; r < g.righe; r++) for (let c = 0; c < g.colonne; c++) out.push(nomeCella(r, c));
+  const g = grigliaAiuola(a), out = [], via = celleMancanti(a);
+  for (let r = 0; r < g.righe; r++) for (let c = 0; c < g.colonne; c++) if (!via.has(nomeCella(r, c))) out.push(nomeCella(r, c));
   return out;
 }
 // Parte dell'aiuola occupata da una coltura (1 = tutta).
@@ -111,6 +111,8 @@ function vociAnnoScorso(anno) {
       k: nuovoId(), ortaggioId: o.id, area: Math.round(fr * areaAiuola(a) * 100) / 100,
       inizio: aISO(inizio), fine: aISO(fine), modo, semenzaio, serra,
       origine: a.id, frazioneOrigine: fr, varieta: i.varieta || "", quantita: i.quantita || "",
+      // Caselle dell'anno scorso: nell'aiuola nuova si riprende la stessa disposizione.
+      ...(haGriglia(a) && i.celle?.length ? { celleOrigine: celleValide(a, i.celle), grigliaOrigine: grigliaAiuola(a) } : {}),
     });
   }
   return voci.sort((x, y) => x.inizio.localeCompare(y.inizio) || PER_ID[x.ortaggioId].nome.localeCompare(PER_ID[y.ortaggioId].nome, "it"));
@@ -182,6 +184,21 @@ function occupazioniFisse(anno) {
   }
   return fisse;
 }
+
+// Le caselle che la coltura aveva l'anno scorso, riportate sulla scacchiera di
+// quest'aiuola (stessi nomi se le scacchiere sono uguali, altrimenti in proporzione).
+// variante: 1 = girata sopra/sotto, 2 = destra/sinistra, 3 = entrambe (per la rotazione nella stessa aiuola).
+function celleRiportate(v, a, variante = 0) {
+  if (!v.celleOrigine?.length || !haGriglia(a)) return null;
+  const g = grigliaAiuola(a), go = v.grigliaOrigine;
+  const src = new Set(v.celleOrigine), out = [], via = celleMancanti(a);
+  for (let r = 0; r < g.righe; r++) for (let c = 0; c < g.colonne; c++) {
+    const rr = variante & 1 ? g.righe - 1 - r : r, cc = variante & 2 ? g.colonne - 1 - c : c;
+    if (!via.has(nomeCella(r, c)) && src.has(nomeCella(Math.floor(rr * go.righe / g.righe), Math.floor(cc * go.colonne / g.colonne)))) out.push(nomeCella(r, c));
+  }
+  return out.length ? ordinaCelle(out) : null;
+}
+function stesseCelle(x, y) { return x?.length === y?.length && x.every((c, k) => c === y[k]); }
 
 // Quanto spazio prende una voce in un'aiuola: caselle (con scacchiera) o m².
 function bisogno(v, a) {
@@ -282,6 +299,20 @@ function punteggio(v, a, presenti, ctx, conMotivi) {
     dice("bene", `🔄 Rotazione a posto: nel ${anno - 1} qui ${cera(() => true)}.`);
   }
 
+  // Colture che l'anno scorso stavano insieme: meglio che si spostino insieme,
+  // così l'aiuola tiene la stessa disposizione.
+  if (v.origine && haGriglia(a)) {
+    const mie = celleRiportate(v, a);
+    for (const x of presenti) {
+      if (x.fisso || x.v === v || !siSovrappone(x, daISO(v.inizio), daISO(v.fine))) continue;
+      if (x.v.origine === v.origine) p += 6;
+      const sue = celleRiportate(x.v, a);
+      if (mie && sue && mie.some((c) => sue.includes(c))) p -= 15;
+    }
+  } else if (v.origine) {
+    p += 3 * presenti.filter((x) => !x.fisso && x.v !== v && x.v.origine === v.origine).length;
+  }
+
   // Vicini nello stesso periodo
   const vicini = presenti.filter((x) => x.v !== v && siSovrappone(x, daISO(v.inizio), daISO(v.fine))
     && (!x.celle || !v.celle || confinanti(v.celle, x.celle)));
@@ -325,70 +356,129 @@ function totale(ctx, assegna) {
   let t = 0;
   for (const [k, x] of assegna) {
     const a = aiuola(x.aiuolaId), v = ctx.voci.get(k);
-    t += punteggio(v, a, presentiIn(a, ctx, assegna, k), ctx, false);
+    t += punteggio(conCelle(v, a, x.variante), a, presentiIn(a, ctx, assegna, k), ctx, false);
   }
   return t;
 }
 
 function distribuisci(ctx) {
   const aiuole = ctx.aiuole;
-  const assegna = new Map(); // k -> { aiuolaId }
+  const assegna = new Map(); // k -> { aiuolaId, variante }
   const fuori = [];
   const bloccate = vociRiservate(ctx);
   for (const [k, id] of bloccate) assegna.set(k, { aiuolaId: id });
   const libere = aiuole.filter((a) => !PER_ID[a.fissa]); // le aiuole riservate non si danno ad altri
-  const ordine = [...ctx.voci.values()].filter((v) => !bloccate.has(v.k)).sort((x, y) => y.area - x.area || x.inizio.localeCompare(y.inizio));
-  for (const v of ordine) {
+
+  // Blocchi: le colture che l'anno scorso stavano nella stessa aiuola si
+  // spostano insieme, con la stessa disposizione (eventualmente girata).
+  const perOrigine = new Map();
+  for (const v of ctx.voci.values()) {
+    const o = aiuola(v.origine);
+    if (bloccate.has(v.k) || !o || PER_ID[o.fissa]) continue;
+    if (!perOrigine.has(o.id)) perOrigine.set(o.id, []);
+    perOrigine.get(o.id).push(v);
+  }
+  const areaBlocco = (b) => b.reduce((n, v) => n + v.area, 0);
+  const blocchi = [...perOrigine.values()].sort((x, y) => areaBlocco(y) - areaBlocco(x));
+  const togli = (b) => { for (const v of b) assegna.delete(v.k); };
+  const metti = (b, a, variante) => { for (const v of b) assegna.set(v.k, { aiuolaId: a.id, variante }); };
+  // Migliore variante del blocco nell'aiuola a (null se non entra).
+  const prova = (b, a) => {
+    let meglio = null;
+    for (const variante of haGriglia(a) ? [0, 1, 2, 3] : [0]) {
+      metti(b, a, variante);
+      if (b.every((v) => entra(v, a, ctx, assegna))) {
+        const p = b.reduce((n, v) => n + punteggio(conCelle(v, a, variante), a, presentiIn(a, ctx, assegna, v.k), ctx, false), 0) + (variante ? 0 : 0.5);
+        if (!meglio || p > meglio.p) meglio = { p, variante };
+      }
+      togli(b);
+    }
+    return meglio;
+  };
+  const dove = new Map(); // blocco -> aiuola
+  const singole = [];
+  for (const b of blocchi) {
+    let scelta = null;
+    for (const a of libere) {
+      if ([...dove.values()].includes(a)) continue;
+      const r = prova(b, a);
+      if (r && (!scelta || r.p > scelta.p)) scelta = { ...r, a };
+    }
+    if (scelta) { metti(b, scelta.a, scelta.variante); dove.set(b, scelta.a); } else singole.push(...b);
+  }
+  // Miglioramenti: scambiare due blocchi o spostarne uno in un'aiuola libera.
+  const rimetti = (b, a) => { const r = prova(b, a); if (!r) return false; metti(b, a, r.variante); return true; };
+  for (let giro = 0; giro < 4; giro++) {
+    let meglio = false;
+    let base = totale(ctx, assegna);
+    const lista = [...dove.keys()];
+    for (let x = 0; x < lista.length; x++) {
+      for (let y = x + 1; y < lista.length; y++) {
+        const bx = lista[x], by = lista[y], ax = dove.get(bx), ay = dove.get(by);
+        togli(bx); togli(by);
+        if (rimetti(bx, ay) && rimetti(by, ax)) {
+          const t = totale(ctx, assegna);
+          if (t > base + 0.01) { base = t; dove.set(bx, ay); dove.set(by, ax); meglio = true; continue; }
+        }
+        togli(bx); togli(by); rimetti(bx, ax); rimetti(by, ay);
+      }
+    }
+    for (const b of lista) {
+      const da = dove.get(b);
+      for (const a of libere) {
+        if ([...dove.values()].includes(a)) continue;
+        togli(b);
+        if (rimetti(b, a)) {
+          const t = totale(ctx, assegna);
+          if (t > base + 0.01) { base = t; dove.set(b, a); meglio = true; break; }
+          togli(b);
+        }
+        rimetti(b, da);
+      }
+    }
+    if (!meglio) break;
+  }
+
+  // Le altre colture (aggiunte a mano, o blocchi che non entrano da nessuna parte), una per una.
+  singole.push(...[...ctx.voci.values()].filter((v) => !bloccate.has(v.k) && !assegna.has(v.k) && !singole.includes(v)));
+  singole.sort((x, y) => y.area - x.area || x.inizio.localeCompare(y.inizio));
+  for (const v of singole) {
     let meglio = null, pm = -Infinity;
     for (const a of libere) {
-      if (!entra(v, a, ctx, assegna)) continue;
+      assegna.set(v.k, { aiuolaId: a.id });
+      const ok = entra(v, a, ctx, assegna);
+      assegna.delete(v.k);
+      if (!ok) continue;
       const p = punteggio(v, a, presentiIn(a, ctx, assegna, v.k), ctx, false);
       if (p > pm) { pm = p; meglio = a; }
     }
     if (meglio) assegna.set(v.k, { aiuolaId: meglio.id });
     else fuori.push(v.k);
   }
-  // Miglioramenti: spostare una voce o scambiarne due, finché serve.
-  for (let giro = 0; giro < 4; giro++) {
+  for (let giro = 0; giro < 3; giro++) {
     let meglio = false;
     let base = totale(ctx, assegna);
-    for (const k of [...assegna.keys()].filter((x) => !bloccate.has(x))) {
-      const da = assegna.get(k).aiuolaId;
+    for (const v of singole) {
+      if (!assegna.has(v.k)) continue;
+      const da = assegna.get(v.k).aiuolaId;
       for (const a of libere) {
         if (a.id === da) continue;
-        assegna.set(k, { aiuolaId: a.id });
-        if (entra(ctx.voci.get(k), a, ctx, assegna)) {
+        assegna.set(v.k, { aiuolaId: a.id });
+        if (entra(v, a, ctx, assegna)) {
           const t = totale(ctx, assegna);
-          if (t > base + 0.01) { base = t; meglio = true; continue; }
+          if (t > base + 0.01) { base = t; meglio = true; break; }
         }
-        assegna.set(k, { aiuolaId: da });
+        assegna.set(v.k, { aiuolaId: da });
       }
-    }
-    const chiavi = [...assegna.keys()].filter((x) => !bloccate.has(x));
-    for (let x = 0; x < chiavi.length; x++) {
-      for (let y = x + 1; y < chiavi.length; y++) {
-        const ax = assegna.get(chiavi[x]).aiuolaId, ay = assegna.get(chiavi[y]).aiuolaId;
-        if (ax === ay) continue;
-        assegna.set(chiavi[x], { aiuolaId: ay });
-        assegna.set(chiavi[y], { aiuolaId: ax });
-        if (entra(ctx.voci.get(chiavi[x]), aiuola(ay), ctx, assegna) && entra(ctx.voci.get(chiavi[y]), aiuola(ax), ctx, assegna)) {
-          const t = totale(ctx, assegna);
-          if (t > base + 0.01) { base = t; meglio = true; continue; }
-        }
-        assegna.set(chiavi[x], { aiuolaId: ax });
-        assegna.set(chiavi[y], { aiuolaId: ay });
-      }
-    }
-    // Chi era rimasto fuori, magari ora entra.
-    for (const k of [...fuori]) {
-      const v = ctx.voci.get(k);
-      const a = libere.filter((b) => entra(v, b, ctx, assegna))
-        .sort((b1, b2) => punteggio(v, b2, presentiIn(b2, ctx, assegna, k), ctx, false) - punteggio(v, b1, presentiIn(b1, ctx, assegna, k), ctx, false))[0];
-      if (a) { assegna.set(k, { aiuolaId: a.id }); fuori.splice(fuori.indexOf(k), 1); meglio = true; }
     }
     if (!meglio) break;
   }
   return { assegna, fuori };
+}
+// La voce con le caselle che avrebbe nell'aiuola a (per il punteggio).
+function conCelle(v, a, variante) {
+  const c = variante == null ? null : celleRiportate(v, a, variante);
+  return c ? { ...v, celle: c } : v;
 }
 
 // -----------------------------------------------------------------------------
@@ -404,6 +494,9 @@ function piazzaCelle(a, v, ctx, assegna) {
   for (const x of altri) {
     for (const c of x.celle || tutteLeCelle(a)) { occupate.add(c); (chi[c] ??= []).push(x.ortaggioId); }
   }
+  for (const c of celleMancanti(a)) occupate.add(c); // caselle che non esistono
+  const riportate = celleRiportate(v, a, assegna.get(v.k)?.variante || 0);
+  if (riportate && !riportate.some((c) => occupate.has(c))) return riportate;
   // Costo di ogni casella: stessa famiglia negli anni scorsi, cattivi e buoni vicini attorno.
   const storia = (ctx.storia[a.id] || []).filter((h) => h.fam === o.fam);
   const amici = amiciDi(o.id), nemici = nemiciDi(o.id);
@@ -465,7 +558,8 @@ function piazzaTutte(ctx, assegna, soloAiuola) {
   for (const a of ctx.aiuole) {
     if (!haGriglia(a) || (soloAiuola && a.id !== soloAiuola)) continue;
     const qui = [...assegna.entries()].filter(([, x]) => x.aiuolaId === a.id)
-      .map(([k]) => ctx.voci.get(k)).sort((x, y) => x.inizio.localeCompare(y.inizio) || bisogno(y, a) - bisogno(x, a));
+      .map(([k]) => ctx.voci.get(k))
+      .sort((x, y) => (celleRiportate(y, a) ? 1 : 0) - (celleRiportate(x, a) ? 1 : 0) || x.inizio.localeCompare(y.inizio) || bisogno(y, a) - bisogno(x, a));
     for (const v of qui) delete assegna.get(v.k).celle;
     for (const v of qui) assegna.get(v.k).celle = piazzaCelle(a, v, ctx, assegna);
   }
@@ -477,14 +571,14 @@ function calcolaPiano() {
   for (const v of ctx.voci.values()) delete v.celle;
   const { assegna, fuori } = distribuisci(ctx);
   piazzaTutte(ctx, assegna);
-  P.proposte = Object.fromEntries([...assegna].map(([k, x]) => [k, { aiuolaId: x.aiuolaId, celle: x.celle || [] }]));
+  P.proposte = Object.fromEntries([...assegna].map(([k, x]) => [k, { aiuolaId: x.aiuolaId, celle: x.celle || [], variante: x.variante || 0 }]));
   P.fuori = fuori;
 }
 
 // Assegnazioni della bozza come Map, con le caselle.
 function assegnaDaBozza(P) {
   return new Map(Object.entries(P.proposte || {}).filter(([k, x]) => aiuola(x.aiuolaId) && P.lista.some((v) => v.k === k))
-    .map(([k, x]) => [k, { aiuolaId: x.aiuolaId, celle: x.celle?.length ? x.celle : null }]));
+    .map(([k, x]) => [k, { aiuolaId: x.aiuolaId, celle: x.celle?.length ? x.celle : null, variante: x.variante || 0 }]));
 }
 
 // -----------------------------------------------------------------------------
@@ -588,6 +682,7 @@ function htmlMiniScacchiera(a, qui, ctx) {
     h += `<span class="intest riga">${nomeRiga(r)}</span>`;
     for (let c = 0; c < g.colonne; c++) {
       const n = nomeCella(r, c), ids = [...(chi[n] || [])];
+      if (celleMancanti(a).has(n)) { h += `<span class="cella mancante"></span>`; continue; }
       h += `<span class="cella${ids.length ? " piena" : ""}" title="${n}${ids.length ? " · " + esc(ids.map((id) => PER_ID[id]?.nome).join(", ")) : ""}"><span class="em">${ids.map((id) => icona(PER_ID[id])).join("")}</span></span>`;
     }
   }
@@ -613,7 +708,13 @@ function htmlProposte(P) {
           <br><span class="tenue piccolo">${esc(testoDate(v))} · ${haGriglia(a) ? `${x.celle?.length || 0} caselle` : fmtArea(v.area)}</span></span>
           <span style="white-space:nowrap"><button class="piccolo secondario" data-piano-modifica="${v.k}">✏️</button>
           <button class="piccolo secondario" data-piano-togli="${v.k}" title="Togli">✕</button></span></div>
-        ${haGriglia(a) && (x.celle?.length || 0) < bisogno(v, a) ? `<div class="pericolo piccolo" style="margin:4px 0">Qui ci sono solo ${x.celle?.length || 0} caselle libere in quel periodo: ne servirebbero ${bisogno(v, a)}.</div>` : ""}
+        ${(() => {
+          const r = celleRiportate(v, a, x.variante || 0);
+          if (!r) return "";
+          return stesseCelle(r, x.celle) ? `<div class="bene piccolo" style="margin:4px 0">▦ ${x.variante ? "Stessa disposizione dell'anno scorso, girata (" + ["", "sopra ↔ sotto", "destra ↔ sinistra", "sopra ↔ sotto e destra ↔ sinistra"][x.variante] + ") per la rotazione." : "Stesse caselle dell'anno scorso."}</div>`
+            : `<div class="avviso piccolo" style="margin:4px 0">▦ Caselle diverse dall'anno scorso (${esc(testoListaCelle(r))}): erano già occupate.</div>`;
+        })()}
+        ${haGriglia(a) && !celleRiportate(v, a) && (x.celle?.length || 0) < bisogno(v, a) ? `<div class="pericolo piccolo" style="margin:4px 0">Qui ci sono solo ${x.celle?.length || 0} caselle libere in quel periodo: ne servirebbero ${bisogno(v, a)}.</div>` : ""}
         ${motivi.map((m) => `<div class="${m.tipo} piccolo" style="margin:4px 0">${m.testo}</div>`).join("")}
       </li>`;
     }).join("");
