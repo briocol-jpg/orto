@@ -8,7 +8,8 @@
 
 // Nell'orto di prova (prova.js) i dati stanno in un'altra chiave: quelli veri non si toccano.
 const IN_PROVA = (() => { try { return sessionStorage.getItem("ilmioorto.inProva") === "1"; } catch { return false; } })();
-const CHIAVE = IN_PROVA ? "ilmioorto.prova" : "ilmioorto.v1";
+// Orto di prova, oppure l'orto della persona scelta (profili.js; il primo è "ilmioorto.v1").
+const CHIAVE = IN_PROVA ? "ilmioorto.prova" : profiloAttivo().chiave;
 const MESI = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
 const MESI_LUNGHI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio",
   "agosto", "settembre", "ottobre", "novembre", "dicembre"];
@@ -2156,6 +2157,7 @@ function vistaLuogo() {
       <p class="tenue piccolo">Promemoria: scarica un file di calendario (.ics) con le attività segnate nel diario con una data futura (con un avviso una settimana prima), i trapianti e le raccolte previsti e l'inizio delle semine dei tuoi ortaggi ★ per i prossimi 12 mesi. Aprilo con l'app Calendario o importalo in Google Calendar dal computer.</p>
       <div class="riga-bottoni"><button class="secondario" id="ics">📅 Scarica promemoria (.ics)</button></div>
     </section>
+    ${htmlProfili()}
     <p><a class="bottone secondario" href="#aiuto">❓ Come si usa l'app</a></p>`;
 }
 
@@ -2430,6 +2432,7 @@ function modificaDateBrinate() {
 // --- Copia di sicurezza e promemoria -----------------------------------------
 function esportaDati() {
   S.impostazioni.ultimaCopia = aISO(oggi());
+  S.impostazioni.proprietario = profiloAttivo().nome || "";
   salva();
   scaricaFile(`orto-copia-${aISO(oggi())}.json`, JSON.stringify(S, null, 1), "application/json");
 }
@@ -2438,6 +2441,7 @@ function esportaDati() {
 // condivide file .json: la copia parte come .txt (il contenuto è lo stesso).
 async function inviaCopia() {
   S.impostazioni.ultimaCopia = aISO(oggi());
+  S.impostazioni.proprietario = profiloAttivo().nome || ""; // chi la riceve sa di chi è l'orto
   salva();
   const nome = `orto-copia-${aISO(oggi())}.txt`;
   const file = new File([JSON.stringify(S, null, 1)], nome, { type: "text/plain" });
@@ -2538,7 +2542,8 @@ function disegna() {
   const { vista, param } = rotta();
   const app = el("app");
   const imp = S.impostazioni;
-  el("sottotitolo").textContent = imp.luogo ? `${imp.luogo}${imp.altitudine != null ? ` · ${Math.round(imp.altitudine)} m` : ""}` : fmtLungo(oggi());
+  el("sottotitolo").textContent = (!IN_PROVA && profili().length > 1 ? `👤 ${nomeProfilo(profiloAttivo())} · ` : "")
+    + (imp.luogo ? `${imp.luogo}${imp.altitudine != null ? ` · ${Math.round(imp.altitudine)} m` : ""}` : fmtLungo(oggi()));
   document.querySelectorAll(".schede a").forEach((a) => a.classList.toggle("attiva", a.dataset.vista === (vista === "piano" ? "orto" : vista === "medaglie" ? "diario" : vista)));
 
   document.body.dataset.vista = vista; // sul PC la scheda Orto è più larga (vedi style.css)
@@ -2551,6 +2556,7 @@ function disegna() {
   if (vista === "oggi") dopoOggi();
   collega(app);
   if (vista === "piano") collegaPiano(app);
+  if (vista === "luogo") collegaProfili(app);
   if (vista === "missioni" || (vista === "medaglie" && IN_PROVA)) collegaMissioni(app);
 }
 

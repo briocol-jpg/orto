@@ -72,6 +72,12 @@ const GUIDA = [
     "Telefono nuovo? <b>📂 Ripristina da file</b> e scegli la copia.",
     "Compare <b>🔄 C'è una versione nuova</b>? Toccalo: l'app si aggiorna.",
   ] },
+  { ico: "👥", titolo: "Più persone, più orti", righe: [
+    "Vuoi far vedere il tuo orto a un vicino? Tocca <b>📤 Invia copia</b> in 📍 Luogo e mandagliela su WhatsApp.",
+    "Lui, nel suo telefono, in 📍 Luogo tocca <b>📥 Aggiungi l'orto di un'altra persona</b> e sceglie il file: il tuo orto si aggiunge al suo, il suo non cambia.",
+    "Quando sul telefono ci sono più orti, all'apertura l'app chiede <b>Di chi è l'orto?</b>. In alto vedi 👤 e il nome.",
+    "In 📍 Luogo puoi aprire un altro orto, cambiargli nome ✏️ o eliminare una copia che non serve più 🗑️.",
+  ] },
 ];
 
 function vistaAiuto() {

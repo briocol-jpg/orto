@@ -212,7 +212,7 @@ function completaOrto() {
 function ortoVuotoDiProva() {
   const s = statoVuoto();
   let vero = null;
-  try { vero = JSON.parse(localStorage.getItem("ilmioorto.v1")); } catch { /* niente */ }
+  try { vero = JSON.parse(localStorage.getItem(profiloAttivo().chiave)); } catch { /* niente */ }
   if (vero?.impostazioni) {
     const v = vero.impostazioni;
     Object.assign(s.impostazioni, { ultimaBrinata: v.ultimaBrinata || s.impostazioni.ultimaBrinata, primaBrinata: v.primaBrinata || s.impostazioni.primaBrinata,
