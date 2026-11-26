@@ -912,13 +912,14 @@ function moduloPiuAiuole() {
       campiMisureVaso(form, v.cosa, true);
       const n = Math.max(0, Math.min(50, Number(form.elements.quante.value) || 0)), da = Number(form.elements.da.value) || 1;
       const usati = S.aiuole.filter((x) => !x.semenzaio && (x.zona || ZONA_PREDEFINITA) === v.zona && x.numero >= da && x.numero < da + n);
-      return (n ? `<div class="bene">Verranno creati ${vaso ? "i vasi" : "le aiuole"} da ${da} a ${da + n - 1} in «${esc(v.zona)}».</div>` : "")
-        + (usati.length ? `<div class="avviso">Numeri già usati in questa zona: ${usati.map((x) => x.numero).join(", ")}.</div>` : "");
+      return (n ? `<div class="bene">Verranno ${vaso ? "creati i vasi" : "create le aiuole"} da ${da} a ${da + n - 1} in «${esc(v.zona)}».</div>` : "")
+        + (usati.length ? `<div class="pericolo">Numeri già usati in questa zona: ${usati.map((x) => x.numero).join(", ")}. Comincia dal ${prossimoNumero(v.zona)}: due aiuole con lo stesso numero si confondono.</div>` : "");
     },
     salva: (v) => {
       const n = Math.max(0, Math.min(50, Number(v.quante) || 0));
       if (!n) return false;
       const da = Number(v.da) || prossimoNumero(v.zona);
+      if (S.aiuole.some((x) => !x.semenzaio && (x.zona || ZONA_PREDEFINITA) === v.zona && x.numero >= da && x.numero < da + n)) return false;
       for (let k = 0; k < n; k++) {
         const vaso = VASI[v.cosa] ? v.cosa : "";
         S.aiuole.push({
@@ -948,11 +949,11 @@ function moduloZona(zona) {
         opzioni: [["", "non indicato (disegno dritto)"], ...DIREZIONI.map(([g, t]) => [g, t])], valore: inElenco ? dir : "" },
       { id: "gradi", etichetta: "…oppure in gradi di bussola, se lo sai preciso (0 = nord, 90 = est)", tipo: "number", passo: "1", valore: inElenco ? "" : dir },
       { id: "specchia", etichetta: "Fondo e davanti delle aiuole sono invertiti nel disegno", tipo: "check", valore: z.specchia },
-      { id: "rinumera", etichetta: "Rinumera le aiuole 1, 2, 3… nell'ordine di adesso, da sinistra a destra (la loro storia resta)", tipo: "check", valore: false },
+      { id: "rinumera", etichetta: "Rinumera le aiuole 1, 2, 3… come si legge: dalla fila in fondo a quella davanti, ognuna da sinistra a destra (la loro storia resta)", tipo: "check", valore: false },
     ],
     aggiorna: (v) => {
       if (!v.rinumera) return "";
-      const lista = aiuoleOrdinate().filter((a) => !a.semenzaio && (a.zona || ZONA_PREDEFINITA) === zona);
+      const lista = ordineLettura(zona);
       const cambi = lista.map((a, k) => [a, k + 1]).filter(([a, n]) => Number(a.numero) !== n);
       return cambi.length ? `<div class="bene">Nuovi numeri: ${esc(testoSpostamenti(cambi))}. Colture e diario restano legati alle loro aiuole.</div>`
         : `<div class="tenue piccolo">Le aiuole sono già numerate 1, 2, 3…</div>`;
@@ -968,7 +969,7 @@ function moduloZona(zona) {
         specchia: v.specchia,
       };
       if (v.rinumera) {
-        aiuoleOrdinate().filter((a) => !a.semenzaio && (a.zona || ZONA_PREDEFINITA) === zona).forEach((a, k) => { a.numero = k + 1; });
+        ordineLettura(zona).forEach((a, k) => { a.numero = k + 1; });
       }
       if (v.nome !== zona) {
         for (const a of S.aiuole) if (!a.semenzaio && (a.zona || ZONA_PREDEFINITA) === zona) a.zona = v.nome;
@@ -978,6 +979,21 @@ function moduloZona(zona) {
       S.zone[v.nome] = dati;
     },
   });
+}
+
+// Aiuole di una zona nell'ordine in cui si leggono sulla mappa: dalla fila in
+// fondo a quella davanti, in ogni fila da sinistra a destra (posizione come in
+// htmlPianta: «inizio» se c'è, altrimenti una dopo l'altra in ordine di numero).
+function ordineLettura(zona) {
+  const lista = aiuoleOrdinate().filter((a) => !a.semenzaio && (a.zona || ZONA_PREDEFINITA) === zona);
+  const fine = {}, x = new Map();
+  for (const a of lista) {
+    const f = filaAiuola(a);
+    const px = a.inizio != null && a.inizio !== "" ? Math.max(0, Number(a.inizio)) : (fine[f] || 0);
+    fine[f] = px + (a.larghezza || 1) + corridoioZona(zona);
+    x.set(a, px);
+  }
+  return lista.map((a, k) => ({ a, k })).sort((p, q) => filaAiuola(q.a) - filaAiuola(p.a) || x.get(p.a) - x.get(q.a) || p.k - q.k).map((p) => p.a);
 }
 
 // "＋ Nuova aiuola…" nel campo Dove: questi campi compaiono solo se scelta.
@@ -1646,7 +1662,8 @@ function htmlPianta(soloZona) {
     // "inizio" (metri dal bordo sinistro) mette l'aiuola in un punto preciso della sua fila.
     const file = [...new Set(lista.map(filaAiuola))].sort((m, n) => n - m); // dal fondo al davanti
     const dietro = file.length > 1;
-    const posiziona = (spazio) => {
+    // extra(q): spazio in più sotto q (scritte fuori dalle aiuole piccole delle file in mezzo).
+    const posiziona = (spazio, extra = () => 0) => {
       const fine = {};
       const righe = lista.map((a) => {
         const f = filaAiuola(a);
@@ -1661,24 +1678,24 @@ function htmlPianta(soloZona) {
       let prima = [];
       for (const f of file) {
         const questa = righe.filter((q) => q.f === f);
-        const base = prima.length ? Math.min(...prima.map((p) => p.y + p.h + spazio)) : 0;
+        const base = prima.length ? Math.min(...prima.map((p) => p.y + p.h + spazio + extra(p))) : 0;
         const fatte = righe.filter((q) => q.y != null);
         for (const q of questa) {
           const davanti = fatte.filter((p) => p.x < q.x + q.w - 0.01 && q.x < p.x + p.w - 0.01);
-          q.y = davanti.length ? Math.max(...davanti.map((p) => p.y + p.h + spazio)) : base;
+          q.y = davanti.length ? Math.max(...davanti.map((p) => p.y + p.h + spazio + extra(p))) : base;
         }
         prima = questa;
       }
       return righe;
     };
-    const pezzi = posiziona(corridoio);
+    let pezzi = posiziona(corridoio);
     const larghezzaTot = Math.max(...pezzi.map((q) => q.x + q.w));
 
     // Orientamento: la fila va nella direzione della bussola "direzione" (gradi).
     const or = orientamentoZona(zona);
     const T = (px, py) => [px * or.cos - py * or.s * or.sin, px * or.sin + py * or.s * or.cos];
     const angoli = (px, py, w, h) => [T(px, py), T(px + w, py), T(px + w, py + h), T(px, py + h)];
-    const tutti = pezzi.flatMap((q) => angoli(q.x, q.y, q.w, q.h));
+    let tutti = pezzi.flatMap((q) => angoli(q.x, q.y, q.w, q.h));
     const box0 = limiti(tutti);
 
     // Scala in pixel per metro: il disegno occupa la larghezza disponibile (circa 360 px
@@ -1689,6 +1706,22 @@ function htmlPianta(soloZona) {
     const scala = Math.min(scalaMax, disponibile / Math.max(box0.w, 0.5));
     const lati = pezzi.map((q) => Math.min(q.w, q.h)).sort((m, n) => m - n);
     const fs = Math.min(15 / scala, Math.max(10 / scala, lati[Math.floor(lati.length / 2)] / 4)); // testo in metri
+    // Scritte: con una fila sola numero sopra e misure sotto; con più file la fila
+    // in fondo le ha sopra, quella davanti sotto, quelle in mezzo dentro l'aiuola.
+    // Le aiuole e i vasi delle file in mezzo troppo piccoli per contenerle le hanno
+    // sotto, e la fila davanti si sposta per far posto.
+    const doveScritte = (q) => {
+      if (file.length === 1) return "solo";
+      if (q.f === file[0]) return "sopra";
+      if (q.f === file[file.length - 1]) return "sotto";
+      return q.h < fs * 3 || q.w < fs * 3.2 ? "sotto" : "dentro";
+    };
+    const spazioSotto = (q) => q.f !== file[file.length - 1] && doveScritte(q) === "sotto"
+      ? fs * (2.8 + (q.a.vaso && impiantiAttivi(q.a.id).length ? 1.4 : 0)) : 0;
+    if (pezzi.some(spazioSotto)) {
+      pezzi = posiziona(corridoio, spazioSotto);
+      tutti = pezzi.flatMap((q) => angoli(q.x, q.y, q.w, q.h));
+    }
     const testo = (px, py, contenuto, classe, size) => {
       const [tx, ty] = T(px, py);
       return `<text class="${classe}" x="${tx}" y="${ty}" font-size="${size}" text-anchor="middle" dominant-baseline="central">${contenuto}</text>`;
@@ -1702,7 +1735,7 @@ function htmlPianta(soloZona) {
       // Scritte: con una fila sola numero sopra e misure sotto; con più file la fila
       // in fondo le ha sopra, quella davanti sotto, quelle in mezzo dentro l'aiuola.
       // Così tra le file resta solo il vialetto vero.
-      const dove = file.length === 1 ? "solo" : f === file[0] ? "sopra" : f === file[file.length - 1] ? "sotto" : "dentro";
+      const dove = doveScritte({ f, w, h });
       const attivi = a.capanno ? [] : impiantiAttivi(a.id);
       const problemi = attivi.some((i) => avvisiRotazione(a.id, i.ortaggioId, i.data, i.id, i.celle).length
         || avvisiVicini(a.id, i.ortaggioId, i.id, i.celle).cattivi.length);

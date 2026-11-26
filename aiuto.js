@@ -28,7 +28,7 @@ const GUIDA = [
   ] },
   { ico: "🔢", titolo: "Cambiare i numeri delle aiuole", righe: [
     "Dai un numero già usato e lascia la spunta <b>Fai posto</b>: le altre aiuole si spostano di uno.",
-    "Per rifare 1, 2, 3… da sinistra: tocca <b>⚙️</b> sopra il disegno dell'orto e spunta <b>Rinumera</b>.",
+    "Per rifare 1, 2, 3…: tocca <b>⚙️</b> sotto il disegno dell'orto e spunta <b>Rinumera</b>. Si numera come si legge: dalla fila in fondo a quella davanti, ognuna da sinistra a destra.",
     "Non si perde niente: ogni aiuola si porta dietro la sua storia.",
   ] },
   { ico: "🌱", titolo: "Seminare e piantare", righe: [
