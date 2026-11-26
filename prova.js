@@ -6,6 +6,7 @@
 // vedi CHIAVE in app.js); la prova vale solo finché l'app resta aperta
 // (sessionStorage): riaprendo l'app si torna all'orto vero.
 // Le aiuole aggiunte dall'esempio hanno id "es-…"; quelle fatte da chi prova no.
+// Colture ed eventi dell'esempio hanno es: true (le missioni contano solo i tuoi).
 // =============================================================================
 
 const CHIAVE_PROVA = "ilmioorto.prova";
@@ -114,7 +115,8 @@ const PASSI_PROVA = [
   { vai: "#luogo", titolo: "📍 Luogo e copia dei dati", evidenzia: null,
     testo: "Nel tuo orto vero qui metti la posizione col GPS (le date si adattano al tuo clima) e ogni tanto fai «📤 Invia copia» per non perdere i dati." },
   { vai: "#aiuto", titolo: "🎉 Bravo, hai finito!", evidenzia: null,
-    testo: "Adesso sai fare tutto. Puoi continuare a provare quello che vuoi; quando hai finito tocca «Esci dalla prova»: torni al tuo orto e quello di prova si cancella." },
+    testo: "Adesso sai fare tutto. Vuoi metterti alla prova? Tocca <b>🏅 Missioni</b>: dieci sfide con le medaglie, un quiz e la macchina del tempo. Quando hai finito tocca «Esci dalla prova»: torni al tuo orto e quello di prova si cancella.",
+    azione: { testo: "🏅 Vai alle missioni", fai: () => { location.hash = "#missioni"; } } },
 ];
 const val = (x) => (typeof x === "function" ? x() : x);
 
@@ -152,12 +154,12 @@ function completaOrto() {
   aiuola(6, "", 2, 1.5, { fila: -1 });
 
   const imp = (ortaggioId, aiuolaId, data, modo, altro = {}) => {
-    const i = { id: nuovoId(), ortaggioId, aiuolaId, data, modo, finito: false, celle: [], ...altro };
+    const i = { id: nuovoId(), ortaggioId, aiuolaId, data, modo, finito: false, celle: [], es: true, ...altro };
     S.impianti.push(i);
     return i;
   };
   const fine = (i, dataFine) => Object.assign(i, { finito: true, dataFine: dataFine > ieri ? ieri : dataFine, esito: "raccolto" });
-  const ev = (tipo, data, aiuolaId, impiantoId, testo, kg = null) => S.eventi.push({ id: nuovoId(), tipo, data, aiuolaId, impiantoId: impiantoId || "", testo, kg });
+  const ev = (tipo, data, aiuolaId, impiantoId, testo, kg = null) => S.eventi.push({ id: nuovoId(), tipo, data, aiuolaId, impiantoId: impiantoId || "", testo, kg, es: true });
   const celle = (righe, colonne) => righe.flatMap((r) => colonne.map((c) => r + c));
 
   // L'anno scorso: una stagione intera, già finita (il peperone nella serra di chi prova).

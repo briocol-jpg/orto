@@ -405,5 +405,15 @@ body.in-prova:not(.guida-aperta) #guida-prova { left: auto; right: 12px; border:
 body.in-prova.guida-aperta main { padding-bottom: 210px; }
 .evidenziato { outline: 3px solid #f0a500; outline-offset: 4px; border-radius: 8px; animation: lampeggia 1.2s ease-in-out 3; }
 @keyframes lampeggia { 50% { outline-color: transparent; } }
+/* Missioni dell'orto di prova */
+.medaglie { display: flex; flex-wrap: wrap; gap: 6px; font-size: 1.6em; }
+.medaglia { filter: grayscale(1); opacity: 0.35; }
+.medaglia.vinta { filter: none; opacity: 1; }
+.missione.fatta { opacity: 0.75; }
+.missione.prossima { border: 2px solid #f0a500; }
+#medaglia-nuova { position: fixed; top: 70px; left: 50%; transform: translate(-50%, -20px); z-index: 20; background: #fff3c4; color: #3b2a14;
+  border: 2px solid #f0a500; border-radius: 12px; padding: 10px 14px; box-shadow: 0 4px 16px rgba(0,0,0,.2); opacity: 0; pointer-events: none;
+  transition: opacity .3s, transform .3s; max-width: calc(100% - 32px); }
+#medaglia-nuova.visibile { opacity: 1; transform: translate(-50%, 0); }
 .invito-prova { border: 2px dashed var(--verde); }
 @media (prefers-color-scheme: dark) { #striscia-prova { background: #4a3f12; color: #fff3c4; border-color: #6b5a1a; } }

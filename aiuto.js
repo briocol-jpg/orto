@@ -43,6 +43,7 @@ const GUIDA = [
     "<b>＋ Nota</b> o <b>＋ Annotazione</b> per annaffiature, concime, trattamenti.",
     "Una data futura diventa un promemoria 🔔 che vedi in ☀️ Oggi.",
     "Quando la pianta è finita tocca <b>Fine coltura</b>: resta nella storia dell'aiuola.",
+    "Nel 📓 Diario c'è <b>🏅 Medaglie</b>: arrivano da sole mentre usi l'app (primo raccolto da 10 kg, un anno senza avvisi di rotazione, la copia dei dati…).",
     "Per correggere o cancellare qualcosa tocca <b>✏️</b> (anche nel diario e negli anni passati).",
   ] },
   { ico: "📋", titolo: "Preparare l'orto dell'anno nuovo", righe: [
@@ -61,6 +62,7 @@ const GUIDA = [
   ] },
   { ico: "📍", titolo: "La prima volta", righe: [
     "Vuoi imparare senza paura di sbagliare? Qui sopra tocca <b>🎓 Prova con un orto di esempio</b>: un orto finto con una guida passo passo. Per tornare al tuo tocca <b>Esci dalla prova</b>.",
+    "Nell'orto di prova ci sono anche le <b>🏅 Missioni</b> (bottone giallo in alto): dieci sfide con le medaglie, un quiz e ⏩ la macchina del tempo. È un gioco per imparare, anche a scuola: il tuo orto vero non cambia.",
     "Vai nell'orto e in 📍 Luogo tocca <b>📍 Prendi la posizione col GPS</b>: l'app sistema le date per il tuo clima.",
     "Tocca un ortaggio e poi <b>☆</b> per segnarlo tra i tuoi ★: in ☀️ Oggi puoi vedere solo quelli.",
   ] },

@@ -2099,7 +2099,7 @@ function vistaDiario() {
       <h2>Diario</h2>
       <select id="anno-diario" style="width:auto">${elencoAnni.map((a) => `<option ${a === anno ? "selected" : ""}>${a}</option>`).join("")}</select>
     </div>
-    <div class="riga-bottoni"><button id="nuovo-evento">＋ Annotazione</button><button class="secondario" id="nuova-coltura">＋ Coltura</button></div>
+    <div class="riga-bottoni"><button id="nuovo-evento">＋ Annotazione</button><button class="secondario" id="nuova-coltura">＋ Coltura</button>${htmlBottoneMedaglie()}</div>
     <section class="carta"><h3 style="margin-top:0">Raccolti ${anno}</h3>${tabKg}</section>
     <section class="carta"><h3 style="margin-top:0">Annotazioni</h3>
       ${eventi.length ? htmlEventi([...eventi].sort((a, b) => b.data.localeCompare(a.data))) : `<p class="tenue">Nessuna annotazione nel ${anno}.</p>`}
@@ -2429,12 +2429,16 @@ function modificaDateBrinate() {
 
 // --- Copia di sicurezza e promemoria -----------------------------------------
 function esportaDati() {
+  S.impostazioni.ultimaCopia = aISO(oggi());
+  salva();
   scaricaFile(`orto-copia-${aISO(oggi())}.json`, JSON.stringify(S, null, 1), "application/json");
 }
 
 // Invia la copia col menu di condivisione del telefono. Chrome su Android non
 // condivide file .json: la copia parte come .txt (il contenuto è lo stesso).
 async function inviaCopia() {
+  S.impostazioni.ultimaCopia = aISO(oggi());
+  salva();
   const nome = `orto-copia-${aISO(oggi())}.txt`;
   const file = new File([JSON.stringify(S, null, 1)], nome, { type: "text/plain" });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -2516,7 +2520,7 @@ function esportaIcs() {
 function rotta() {
   const h = location.hash.replace(/^#/, "") || "oggi";
   const [vista, param] = h.split("/");
-  return { vista: ["oggi", "calendario", "orto", "diario", "luogo", "piano", "aiuto"].includes(vista) ? vista : "oggi", param };
+  return { vista: ["oggi", "calendario", "orto", "diario", "luogo", "piano", "aiuto", "missioni", "medaglie"].includes(vista) ? vista : "oggi", param };
 }
 
 // Se la finestra cambia molto di larghezza (PC, telefono girato), ridisegno la pianta.
@@ -2535,10 +2539,10 @@ function disegna() {
   const app = el("app");
   const imp = S.impostazioni;
   el("sottotitolo").textContent = imp.luogo ? `${imp.luogo}${imp.altitudine != null ? ` · ${Math.round(imp.altitudine)} m` : ""}` : fmtLungo(oggi());
-  document.querySelectorAll(".schede a").forEach((a) => a.classList.toggle("attiva", a.dataset.vista === (vista === "piano" ? "orto" : vista)));
+  document.querySelectorAll(".schede a").forEach((a) => a.classList.toggle("attiva", a.dataset.vista === (vista === "piano" ? "orto" : vista === "medaglie" ? "diario" : vista)));
 
   document.body.dataset.vista = vista; // sul PC la scheda Orto è più larga (vedi style.css)
-  const viste = { oggi: vistaOggi, calendario: vistaCalendario, orto: () => vistaOrto(param), diario: vistaDiario, luogo: vistaLuogo, piano: vistaPiano, aiuto: vistaAiuto };
+  const viste = { oggi: vistaOggi, calendario: vistaCalendario, orto: () => vistaOrto(param), diario: vistaDiario, luogo: vistaLuogo, piano: vistaPiano, aiuto: vistaAiuto, missioni: () => vistaMissioni(), medaglie: () => vistaMedaglie() };
   const scroll = window.scrollY;
   app.innerHTML = viste[vista]();
   if (disegna.ultima === location.hash) window.scrollTo(0, scroll);
@@ -2547,6 +2551,7 @@ function disegna() {
   if (vista === "oggi") dopoOggi();
   collega(app);
   if (vista === "piano") collegaPiano(app);
+  if (vista === "missioni" || (vista === "medaglie" && IN_PROVA)) collegaMissioni(app);
 }
 
 // Collega i bottoni della vista corrente.
