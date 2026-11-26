@@ -313,6 +313,13 @@ svg.pianta a { cursor: pointer; }
 .legenda i.l-capanno { background: #9a9590; }
 .legenda i.l-porta { background: #8a4b1c; }
 .p-serra { fill: rgba(170, 215, 235, 0.45); stroke: #6aa9c4; stroke-width: 0.04; pointer-events: none; }
+/* Mappa dentro un modulo (scegli l'aiuola toccandola) */
+.mappa-scelta { margin-top: 6px; }
+.mappa-scelta summary { cursor: pointer; color: var(--tenue); font-size: 0.9em; }
+.mappa-scelta .mappa-zona { margin-top: 6px; }
+.mappa-scelta svg.pianta { max-height: 45vh; }
+.mappa-scelta svg.pianta a:not([data-scegli]) { opacity: 0.45; cursor: default; }
+.mappa-scelta svg.pianta a.scelta .p-aiuola { stroke: #f0a400; stroke-width: 0.12; }
 .legenda i.l-terra { background: #c8a477; }
 .legenda i.l-telo { background: #3d3d3d; }
 .legenda i.l-organica { background: #d8bf7a; }

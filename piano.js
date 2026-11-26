@@ -211,7 +211,9 @@ function storiaAiuole(anno) {
     if (!a || a.semenzaio || !o) continue;
     const y = Number(i.data.slice(0, 4));
     if (y >= anno || anno - y > 2) continue;
-    (st[a.id] ??= []).push({ distanza: anno - y, anno: y, fam: o.fam, ortaggioId: o.id, esig: o.esig, fr: frazione(i, a), celle: i.celle?.length ? new Set(celleValide(a, i.celle)) : null });
+    // Terra cambiata dopo questa coltura: per la rotazione non conta più.
+    const vecchia = i.data < terraCambiata(a.id, `${anno}-12-31`);
+    (st[a.id] ??= []).push({ vecchia, distanza: anno - y, anno: y, fam: o.fam, ortaggioId: o.id, esig: o.esig, fr: frazione(i, a), celle: i.celle?.length ? new Set(celleValide(a, i.celle)) : null });
   }
   return st;
 }
@@ -294,11 +296,14 @@ function punteggio(v, a, presenti, ctx, conMotivi) {
   const motivi = [];
   const dice = (tipo, testo) => { if (conMotivi) motivi.push({ tipo, testo }); };
   let p = 0;
+  // Malattia del terreno per questa famiglia: aiuola da evitare.
+  const malati = malattieTerreno(a.id, o.fam, v.inizio || `${ctx.anno}-06-30`);
+  if (malati.length) { p -= 150; dice("pericolo", testoMalattia(malati[0], o.fam)); }
   if (a.fissa === o.id) {
     dice("bene", consiglioFissa(a));
     return conMotivi ? { p, motivi } : p;
   }
-  const storia = ctx.storia[a.id] || [];
+  const storia = (ctx.storia[a.id] || []).filter((h) => !h.vecchia);
   const anno = ctx.anno;
 
   // Rotazione
@@ -544,7 +549,7 @@ function piazzaCelle(a, v, ctx, assegna) {
   const riportate = celleRiportate(v, a, assegna.get(v.k)?.variante || 0);
   if (riportate && !riportate.some((c) => occupate.has(c))) return riportate;
   // Costo di ogni casella: stessa famiglia negli anni scorsi, cattivi e buoni vicini attorno.
-  const storia = (ctx.storia[a.id] || []).filter((h) => h.fam === o.fam);
+  const storia = (ctx.storia[a.id] || []).filter((h) => h.fam === o.fam && !h.vecchia);
   const amici = amiciDi(o.id), nemici = nemiciDi(o.id);
   const costo = (c) => {
     let k = 0;

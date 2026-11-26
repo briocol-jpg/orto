@@ -38,7 +38,19 @@ const TIPI_EVENTO = {
   concimazione: "🟤 Concimazione",
   trattamento: "🧴 Trattamento",
   lavoro: "🛠️ Lavoro",
+  terra: "🪣 Terra cambiata",
+  malattia: "🦠 Malattia del terreno",
   nota: "📝 Nota",
+};
+// Malattie che restano nella terra (annotazione «🦠 Malattia del terreno»):
+// per «anni» anni le famiglie colpite non tornano in quell'aiuola.
+// altre = famiglie che la stessa malattia attacca oltre a quella segnata.
+const MALATTIE_TERRENO = {
+  nonso: { nome: "Non so", anni: 5 },
+  fusariosi: { nome: "Fusariosi (fusto marrone dentro)", anni: 5 },
+  verticillosi: { nome: "Verticillosi (strisce marroni, foglie gialle da un lato)", anni: 5, altre: ["solanacee", "cucurbitacee", "rosacee"] },
+  nematodi: { nome: "Nematodi (palline sulle radici)", anni: 4 },
+  colletto: { nome: "Marciume del colletto (base molle e marcia)", anni: 3 },
 };
 const SOGLIA_BRINATA = 2; // °C di minima dell'aria: sotto, a terra può brinare
 const ANNI_ROTAZIONE = 3;
@@ -409,13 +421,40 @@ function consiglioFissa(a) {
   return `📌 Qui ogni anno ${esc(o.nome.toLowerCase())}, senza rotazione: la terra va rinnovata. Ogni autunno interra letame maturo (4–5 kg/m²${mqAiuola(a) ? `, ${fmtKg(4.5 * mqAiuola(a))} per questa aiuola` : ""}) o stallatico pellettato; ogni 3–4 anni, o se la pianta deperisce presto, togli i primi 20–30 cm di terra e mettine di nuova mescolata a compost.`;
 }
 
+// Terra cambiata (annotazione «🪣 Terra cambiata»): la data dell'ultima volta,
+// fino al giorno dato. Le colture messe prima non contano più per la rotazione.
+function terraCambiata(aiuolaId, finoAISO) {
+  let t = "";
+  for (const e of S.eventi) if (e.tipo === "terra" && e.aiuolaId === aiuolaId && e.data <= finoAISO && e.data > t) t = e.data;
+  return t;
+}
+// Malattie del terreno ancora valide in quell'aiuola, per quella famiglia, alla data.
+// Terra cambiata dopo la malattia = malattia tolta.
+function famiglieMalattia(e) { return [...new Set([e.fam, ...(MALATTIE_TERRENO[e.malattia]?.altre || [])])].filter(Boolean); }
+function anniMalattia(e) { return MALATTIE_TERRENO[e.malattia]?.anni ?? 5; }
+function malattieTerreno(aiuolaId, fam, dataISO) {
+  const nuova = terraCambiata(aiuolaId, dataISO);
+  return S.eventi.filter((e) => e.tipo === "malattia" && e.aiuolaId === aiuolaId && e.data <= dataISO && !(nuova > e.data)
+    && Number(dataISO.slice(0, 4)) < Number(e.data.slice(0, 4)) + anniMalattia(e)
+    && (!fam || famiglieMalattia(e).includes(fam)));
+}
+function testoMalattia(e, fam) {
+  const m = MALATTIE_TERRENO[e.malattia], anno = Number(e.data.slice(0, 4));
+  const quale = m && e.malattia !== "nonso" ? m.nome.replace(/ \(.*/, "").toLowerCase() : "una malattia del terreno";
+  const fams = fam ? [fam] : famiglieMalattia(e);
+  return `🦠 Nel ${anno} qui c'è stata ${quale} (${FAMIGLIE[e.fam]?.toLowerCase() ?? "?"}): niente ${fams.map((f) => FAMIGLIE[f]?.toLowerCase()).join(", ")} in questa aiuola fino al ${anno + anniMalattia(e)}, e non portare la sua terra in altre aiuole.`;
+}
 function avvisiRotazione(aiuolaId, ortaggioId, dataISO, escludiId, celle) {
   const o = PER_ID[ortaggioId];
-  if (!o || aiuola(aiuolaId)?.semenzaio || aiuola(aiuolaId)?.fissa === ortaggioId) return [];
+  if (!o || aiuola(aiuolaId)?.semenzaio) return [];
+  const malati = malattieTerreno(aiuolaId, o.fam, dataISO).map((e) => testoMalattia(e, o.fam));
+  if (aiuola(aiuolaId)?.fissa === ortaggioId) return malati;
   const data = daISO(dataISO);
-  const avvisi = [];
+  const nuova = terraCambiata(aiuolaId, dataISO);
+  const avvisi = [...malati];
   for (const i of S.impianti) {
     if (i.id === escludiId || i.aiuolaId !== aiuolaId) continue;
+    if (nuova && i.data < nuova) continue; // c'era sulla terra di prima
     const altro = PER_ID[i.ortaggioId];
     if (!altro || altro.fam !== o.fam) continue;
     if (celle?.length && i.celle?.length && !i.celle.some((c) => celle.includes(c))) continue;
@@ -650,7 +689,7 @@ function htmlAvvisi(aiuolaId, ortaggioId, dataISO, escludiId, celle, protezione)
   const o = PER_ID[ortaggioId];
   let h = "";
   if (aiuola(aiuolaId)?.fissa === ortaggioId) h += `<div class="bene">${consiglioFissa(aiuola(aiuolaId))}</div>`;
-  for (const t of avvisiRotazione(aiuolaId, ortaggioId, dataISO, escludiId, celle)) h += `<div class="avviso">🔄 ${esc(t)}</div>`;
+  for (const t of avvisiRotazione(aiuolaId, ortaggioId, dataISO, escludiId, celle)) h += `<div class="${t.startsWith("🦠") ? "pericolo" : "avviso"}">${t.startsWith("🦠") ? "" : "🔄 "}${esc(t)}</div>`;
   const v = avvisiVicini(aiuolaId, ortaggioId, escludiId, celle);
   if (v.cattivi.length) h += `<div class="pericolo">⚠️ ${esc(o.nome)} non sta bene vicino a: ${v.cattivi.map((x) => esc(PER_ID[x].nome.toLowerCase())).join(", ")}.</div>`;
   if (v.buoni.length) h += `<div class="bene">🤝 Buoni vicini: ${v.buoni.map((x) => esc(PER_ID[x].nome.toLowerCase())).join(", ")}.</div>`;
@@ -695,9 +734,11 @@ function modulo({ titolo, campi, testoSalva = "Salva", salva, aggiorna, elimina,
     const req = c.richiesto ? "required" : "";
     const val = c.valore ?? "";
     if (c.tipo === "select") {
+      // mappa: true = sotto il menu c'è la pianta dell'orto, si sceglie toccando l'aiuola.
+      const mappa = c.mappa ? htmlPianta(null, true) : "";
       return `<label for="m_${c.id}">${esc(c.etichetta)}</label><select id="m_${c.id}" name="${c.id}" ${req}>
         ${c.opzioni.map(([v, t]) => `<option value="${esc(v)}" ${String(v) === String(val) ? "selected" : ""}>${esc(t)}</option>`).join("")}
-      </select>`;
+      </select>${mappa ? `<details class="mappa-scelta" open><summary>🗺️ Oppure tocca l'aiuola sulla mappa</summary>${mappa}</details>` : ""}`;
     }
     if (c.tipo === "textarea") {
       return `<label for="m_${c.id}">${esc(c.etichetta)}</label><textarea id="m_${c.id}" name="${c.id}" ${req}>${esc(val)}</textarea>`;
@@ -742,6 +783,19 @@ function modulo({ titolo, campi, testoSalva = "Salva", salva, aggiorna, elimina,
       return v;
     };
     const ricalcola = () => { if (aggiorna) f.querySelector("#m_avvisi").innerHTML = aggiorna(valori(), form) || ""; };
+    // Menu con la mappa: toccare un'aiuola la sceglie; quella scelta è evidenziata.
+    for (const c of campi.filter((c) => c.mappa)) {
+      const sel = form.elements[c.id], w = f.querySelector(`#w_${c.id}`);
+      const evidenzia = () => w.querySelectorAll("[data-scegli]").forEach((a) => a.classList.toggle("scelta", a.dataset.scegli === sel.value));
+      w.querySelectorAll("[data-scegli]").forEach((a) => a.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (![...sel.options].some((o) => o.value === a.dataset.scegli)) return;
+        sel.value = a.dataset.scegli;
+        sel.dispatchEvent(new Event("change", { bubbles: true }));
+      }));
+      sel.addEventListener("change", evidenzia);
+      evidenzia();
+    }
     form.addEventListener("input", ricalcola);
     form.addEventListener("change", ricalcola);
     ricalcola();
@@ -1085,7 +1139,7 @@ function moduloImpianto({ aiuolaId, ortaggioId, impianto, celle } = {}) {
     titolo: i ? "Modifica coltura" : "Nuova coltura",
     campi: [
       { id: "ortaggioId", etichetta: "Ortaggio", tipo: "select", opzioni: opzioniOrtaggi(), valore: i?.ortaggioId ?? ortaggioId ?? "", richiesto: true },
-      { id: "aiuolaId", etichetta: "Dove (aiuola)", tipo: "select", opzioni: [...opzioniAiuole(), [NUOVA_AIUOLA, "＋ Nuova aiuola…"]], valore: aiuolaIniziale, richiesto: true },
+      { id: "aiuolaId", etichetta: "Dove (aiuola)", tipo: "select", opzioni: [...opzioniAiuole(), [NUOVA_AIUOLA, "＋ Nuova aiuola…"]], valore: aiuolaIniziale, richiesto: true, mappa: !i },
       ...campiNuovaAiuola(),
       campoCelle(i?.celle ?? celle),
       { id: "modo", etichetta: "Come", tipo: "select", opzioni: Object.entries(MODI).filter(([k]) => k !== "acq"), valore: i?.modo ?? modoPredefinito(ultimoOrtaggio, aiuolaIniziale) },
@@ -1230,7 +1284,7 @@ function moduloTrapianto(i) {
   modulo({
     titolo: `Trapianta ${o.nome.toLowerCase()}`,
     campi: [
-      { id: "aiuolaId", etichetta: "In quale aiuola", tipo: "select", opzioni: [...opzioniAiuole(false), [NUOVA_AIUOLA, "＋ Nuova aiuola…"]], valore: aiuola(i.pianoAiuola) ? i.pianoAiuola : "", richiesto: true },
+      { id: "aiuolaId", etichetta: "In quale aiuola", tipo: "select", opzioni: [["", "— scegli —"], ...opzioniAiuole(false), [NUOVA_AIUOLA, "＋ Nuova aiuola…"]], valore: aiuola(i.pianoAiuola) ? i.pianoAiuola : "", richiesto: true, mappa: true },
       ...campiNuovaAiuola(),
       campoCelle(aiuola(i.pianoAiuola) ? i.pianoCelle : []),
       { id: "data", etichetta: "Data del trapianto", tipo: "date", valore: aISO(oggi()), richiesto: true },
@@ -1285,14 +1339,33 @@ function moduloEvento({ tipo = "raccolto", aiuolaId, impiantoId, evento, testo }
         opzioni: [["", "—"], ...attivi.map((x) => [x.id, `${nomeOrtaggioTesto(x.ortaggioId)} — ${nomeAiuolaId(x.aiuolaId)}`])],
         valore: ev?.impiantoId ?? impiantoId ?? "" },
       { id: "kg", etichetta: "Quantità raccolta in kg (solo raccolto)", tipo: "number", passo: "0.1", valore: ev?.kg },
+      { id: "malattia", etichetta: "Quale malattia (se non lo sai: «Non so»)", tipo: "select", opzioni: Object.entries(MALATTIE_TERRENO).map(([k, m]) => [k, m.nome]), valore: ev?.malattia ?? "nonso", nascosto: (ev?.tipo ?? tipo) !== "malattia" },
+      { id: "fam", etichetta: "Su quale famiglia di piante", tipo: "select", opzioni: [["", "— scegli —"], ...Object.entries(FAMIGLIE)], valore: ev?.fam ?? "", nascosto: (ev?.tipo ?? tipo) !== "malattia" },
       { id: "testo", etichetta: "Descrizione (es. prodotto usato, osservazioni)", tipo: "textarea", valore: ev?.testo ?? testo },
     ],
     elimina: ev ? () => {
       if (!confirm(`Eliminare questa annotazione (${TIPI_EVENTO[ev.tipo] ?? ev.tipo}, ${fmt(daISO(ev.data))})?`)) return false;
       S.eventi = S.eventi.filter((x) => x.id !== ev.id);
     } : null,
+    aggiorna: (v, form) => {
+      const mal = v.tipo === "malattia";
+      form.querySelector("#w_malattia").hidden = !mal;
+      form.querySelector("#w_fam").hidden = !mal;
+      if (mal && !v.fam) {
+        // Proposta: la famiglia della coltura scelta, o dell'ultima coltura dell'aiuola.
+        const ult = S.impianti.find((x) => x.id === v.impiantoId)
+          ?? S.impianti.filter((x) => x.aiuolaId === v.aiuolaId && x.data <= v.data).sort((x, y) => y.data.localeCompare(x.data))[0];
+        if (PER_ID[ult?.ortaggioId]) form.elements.fam.value = PER_ID[ult.ortaggioId].fam;
+      }
+      if (mal) return `<div class="bene">🦠 Piante avvizzite o marce per colpa della terra? Per ${anniMalattia({ malattia: v.malattia })} anni l'app ti avvisa se rimetti ${form.elements.fam.value ? FAMIGLIE[form.elements.fam.value].toLowerCase() : "quella famiglia"}${MALATTIE_TERRENO[v.malattia]?.altre ? ` (con la verticillosi anche ${MALATTIE_TERRENO.verticillosi.altre.filter((f) => f !== form.elements.fam.value).map((f) => FAMIGLIE[f].toLowerCase()).join(", ")})` : ""} in quell'aiuola, e il piano dell'anno nuovo la evita.${v.aiuolaId ? "" : "<br><b>Scegli l'aiuola.</b>"}</div>`;
+      return v.tipo === "terra"
+      ? `<div class="bene">🪣 Hai tolto la terra vecchia e messo terra nuova (o presa da un'altra aiuola)? Da questa data l'app tratta l'aiuola come nuova: le colture di prima non contano più per la rotazione.${v.aiuolaId ? "" : "<br><b>Scegli l'aiuola.</b>"}</div>` : "";
+    },
     salva: (v) => {
       if (v.impiantoId && !v.aiuolaId) v.aiuolaId = S.impianti.find((x) => x.id === v.impiantoId)?.aiuolaId ?? "";
+      if ((v.tipo === "terra" || v.tipo === "malattia") && !aiuola(v.aiuolaId)) { document.querySelector("#m_avvisi").innerHTML = `<div class="pericolo">Per «${TIPI_EVENTO[v.tipo].slice(3)}» scegli l'aiuola.</div>`; return false; }
+      if (v.tipo === "malattia" && !v.fam) { document.querySelector("#m_avvisi").innerHTML = `<div class="pericolo">Scegli la famiglia di piante colpita.</div>`; return false; }
+      if (v.tipo !== "malattia") { delete v.malattia; delete v.fam; }
       v.kg = v.kg ? Number(v.kg.replace(",", ".")) : null;
       if (ev) Object.assign(ev, v);
       else S.eventi.push({ id: nuovoId(), ...v });
@@ -1742,7 +1815,8 @@ function vistaOrto(idAiuola) {
 
 // Pianta vista dall'alto: per ogni zona le aiuole affiancate da sinistra a
 // destra in ordine di numero, in scala, con le colture in corso.
-function htmlPianta(soloZona) {
+// perScelta: solo il disegno, dentro un modulo (le aiuole si toccano per sceglierle).
+function htmlPianta(soloZona, perScelta = false) {
   const blocchi = zone().filter((z) => !soloZona || z === soloZona).map((zona) => {
     const lista = aiuoleOrdinate().filter((a) => !a.semenzaio && (a.zona || ZONA_PREDEFINITA) === zona);
     if (!lista.length) return "";
@@ -1920,7 +1994,7 @@ function htmlPianta(soloZona) {
       }
       const chiaro = dove === "dentro" && a.pacciamatura === "telo" ? " p-chiaro" : "";
       const d = fs * 0.15;
-      return `<a href="#orto/${a.id}">
+      return `<a href="#orto/${a.id}"${perScelta && coltivabile(a) ? ` data-scegli="${a.id}"` : ""}>
         <title>${esc(nomeAiuola(a))}${misurata ? " · " + esc(misureAiuola(a)) : ""}</title>
         ${a.vaso === "tondo" ? `<circle class="p-aiuola p-vaso${misurata ? "" : " p-senza"}" cx="${T(cx, y + h / 2)[0]}" cy="${T(cx, y + h / 2)[1]}" r="${w / 2}"/>`
           : `<polygon class="p-aiuola${misurata ? "" : " p-senza"}${a.capanno ? " p-capanno" : ""}${a.vaso ? " p-vaso" : ""}${formaVasiCaselle(a) && haGriglia(a) ? " p-base-vasi" : ""}${a.pacciamatura ? " p-" + a.pacciamatura : ""}" points="${punti(angoli(x, y, w, h))}"/>`}
@@ -1957,9 +2031,11 @@ function htmlPianta(soloZona) {
     }
     const larghezzaBox = maxX - minX, altezzaBox = maxY - minY;
     const superficie = misurate.reduce((s, a) => s + mqAiuola(a), 0);
+    const svg = `<svg class="pianta" style="max-width:${Math.round(larghezzaBox * scala * (scala < scalaMax ? 1.2 : 1))}px" viewBox="${minX} ${minY} ${larghezzaBox} ${altezzaBox}" role="img" aria-label="Pianta di ${esc(zona)}">${disegno}${nord}</svg>`;
+    if (perScelta) return `<div class="mappa-zona">${zone().length > 1 ? `<b class="piccolo">${esc(zona)}</b>` : ""}${svg}</div>`;
     return `<section class="carta">
       <h3 style="margin-top:0">${esc(zona)} · vista dall'alto</h3>
-      <svg class="pianta" style="max-width:${Math.round(larghezzaBox * scala * (scala < scalaMax ? 1.2 : 1))}px" viewBox="${minX} ${minY} ${larghezzaBox} ${altezzaBox}" role="img" aria-label="Pianta di ${esc(zona)}">${disegno}${nord}</svg>
+      ${svg}
       ${legendaPianta(lista)}
       ${consiglioSole(zona, lista)}
       <p class="tenue piccolo">${or.attivo ? `La fila va ${esc(DIREZIONI_TESTO(or.gradi))}.` : "Disegno dritto: l'orientamento della zona non è indicato."}
@@ -2124,6 +2200,7 @@ function vistaAiuola(a) {
     ${misureAiuola(a) || tipoAiuola(a) ? `<p class="tenue">${esc([misureAiuola(a), tipoAiuola(a)].filter(Boolean).join(" · "))}</p>` : ""}
     ${a.note ? `<p>${esc(a.note)}</p>` : ""}
     ${PER_ID[a.fissa] ? `<div class="bene">${consiglioFissa(a)}</div>` : ""}
+    ${a.semenzaio ? "" : malattieTerreno(a.id, null, aISO(oggi())).map((e) => `<div class="pericolo">${esc(testoMalattia(e))}</div>`).join("")}
     ${a.semenzaio ? `<p class="tenue piccolo">Qui segni le semine al riparo (in casa, in serra, in vasetti). Quando le piantine sono pronte premi «Trapianta» e scegli l'aiuola.</p>` : ""}
     ${consiglioAiuolaVuota(a)}
     ${htmlScacchiera(a)}
@@ -2133,7 +2210,7 @@ function vistaAiuola(a) {
       <button class="secondario" id="evento-qui">＋ Annotazione</button></div>
     </section>
     ${suggerimentiAiuola(a)}
-    ${a.semenzaio ? "" : `<section class="carta"><h3 style="margin-top:0">Negli anni passati</h3>${htmlStorici}</section>`}
+    ${a.semenzaio ? "" : `<section class="carta"><h3 style="margin-top:0">Negli anni passati</h3>${htmlTerraCambiata(a)}${htmlStorici}</section>`}
     ${eventi.length ? `<section class="carta"><h3 style="margin-top:0">Ultime annotazioni</h3>${htmlEventi(eventi)}</section>` : ""}
     <div class="riga-bottoni">
       <button class="secondario" id="modifica-aiuola">✏️ Modifica ${a.semenzaio ? "semenzaio" : "aiuola"}</button>
@@ -2141,10 +2218,14 @@ function vistaAiuola(a) {
     </div>`;
 }
 
+function htmlTerraCambiata(a) {
+  const t = terraCambiata(a.id, aISO(oggi()));
+  return t ? `<p class="bene piccolo">🪣 Terra cambiata il ${fmt(daISO(t))} ${t.slice(0, 4)}: le colture di prima non contano più per la rotazione.</p>` : "";
+}
 function htmlEventi(eventi) {
   return `<ul class="elenco">${eventi.map((e) => {
     const imp = S.impianti.find((i) => i.id === e.impiantoId);
-    return `<li><div class="riga"><span><b>${TIPI_EVENTO[e.tipo] ?? e.tipo}</b>
+    return `<li><div class="riga"><span><b>${TIPI_EVENTO[e.tipo] ?? e.tipo}</b>${e.tipo === "malattia" ? ` · ${esc((MALATTIE_TERRENO[e.malattia]?.nome ?? "").replace(/ \(.*/, ""))} su ${esc(FAMIGLIE[e.fam]?.toLowerCase() ?? "")}` : ""}
       ${imp ? ` · ${nomeOrtaggio(imp.ortaggioId)}` : ""}${e.kg ? ` · <b>${String(e.kg).replace(".", ",")} kg</b>` : ""}
       ${daISO(e.data) > oggi() ? ` <span class="chip-futuro">🔔 in programma</span>` : ""}
       <br><span class="tenue piccolo">${fmt(daISO(e.data))} ${e.data.slice(0, 4)}${e.aiuolaId && aiuola(e.aiuolaId) ? " · " + esc(nomeAiuolaId(e.aiuolaId)) : ""}</span>
