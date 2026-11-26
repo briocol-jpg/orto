@@ -306,6 +306,7 @@ svg.pianta a { cursor: pointer; }
 .p-aiuola.p-telo { fill: #3d3d3d; stroke: #1f1f1f; }
 .p-aiuola.p-organica { fill: #d8bf7a; stroke: #8c7536; }
 .p-aiuola.p-vaso { fill: #c9693c; stroke: #8a3f1d; stroke-width: 0.02; }
+.p-aiuola.p-base-vasi { fill: none; stroke-dasharray: 0.1 0.08; }
 .legenda i.l-vaso { background: #c9693c; }
 .p-aiuola.p-capanno { fill: #9a9590; stroke: #5e5953; }
 .p-porta { stroke: #8a4b1c; stroke-linecap: round; }

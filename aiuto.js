@@ -19,10 +19,11 @@ const GUIDA = [
     "Vuoi dividerla in quadretti? Metti righe e colonne: è la <b>scacchiera</b>.",
     "Aiuole su più file, una davanti all'altra? In ✏️ Modifica aiuola scegli <b>In quale fila sta</b> (dietro = verso il fondo, davanti = verso di te) e scrivi a quanti metri dal bordo sinistro comincia.",
     "Qualche quadretto non c'è davvero (vasi a piramide)? Sotto la scacchiera tocca <b>✕ Caselle che non esistono</b>.",
+    "Ogni quadretto è un vaso? In ✏️ Modifica aiuola in <b>🏺 Le caselle sono vasi?</b> scegli tondi, quadrati o rettangolari e scrivi le misure di un vaso: sulla mappa vedi i vasi a piramide, e la storia dell'aiuola resta.",
     "Un'aiuola dove metti sempre la stessa pianta (la zucca sul tetto)? In ✏️ Modifica aiuola scegli <b>Sempre lo stesso ortaggio</b> 📌.",
     "Una serra? In ✏️ Modifica aiuola scegli <b>In serra o tunnel</b> 🏠 e il lato della <b>🚪 Porta</b>: sulla mappa è il tratto marrone.",
     "Sposti le serre da un anno all'altro? Spunta <b>🔁 Serra spostabile</b> in tutte le aiuole dove possono andare, anche in quelle all'aperto.",
-    "Vasi sparsi in giardino (peperoncini, basilico)? Tocca <b>＋ Nuova aiuola</b> e in <b>Che cos'è</b> scegli 🏺 <b>vaso tondo</b> (scrivi il diametro) o <b>vaso rettangolare</b>. Mettili tutti nella zona «Vasi».",
+    "Vasi sparsi in giardino (peperoncini, basilico)? Tocca <b>＋ Nuova aiuola</b> e in <b>Che cos'è</b> scegli 🏺 <b>vaso tondo</b> (scrivi il diametro), <b>vaso quadrato</b> (scrivi il lato) o <b>vaso rettangolare</b>. Mettili tutti nella zona «Vasi». Tanti vasi uguali? <b>＋ Più aiuole insieme</b> e in <b>Che cosa</b> scegli i vasi.",
     "Il capanno degli attrezzi? Tocca <b>＋ Nuova aiuola</b> e in <b>Che cos'è</b> scegli 🧰 <b>capanno</b>: si vede sulla mappa ma non si coltiva. Se è una serra usata per gli attrezzi, scegli anche <b>In serra o tunnel</b> e la porta.",
   ] },
   { ico: "🔢", titolo: "Cambiare i numeri delle aiuole", righe: [

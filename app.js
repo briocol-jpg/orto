@@ -241,8 +241,18 @@ function allineaSerre(aiuole) {
 // Porta della serra: lato da cui si entra (la serra si può girare).
 const PORTE = { "": "— non indicata —", sinistra: "A sinistra", destra: "A destra", dietro: "Dietro (verso il fondo)", davanti: "Davanti (verso di te)" };
 // Capanno o deposito degli attrezzi: si disegna nella pianta ma non si coltiva.
-// Vasi: a.vaso = "tondo" (larghezza = lunghezza = diametro) o "rettangolare".
-const VASI = { tondo: "Vaso tondo", rettangolare: "Vaso rettangolare" };
+// Vasi: a.vaso = "tondo" (larghezza = lunghezza = diametro), "quadrato"
+// (larghezza = lunghezza = lato) o "rettangolare".
+const VASI = { tondo: "Vaso tondo", quadrato: "Vaso quadrato", rettangolare: "Vaso rettangolare" };
+// Etichetta del campo larghezza e lunghezza nascosta secondo il tipo di vaso.
+// Forma dei vasi di una scacchiera fatta di vasi ("" = terra; il vecchio true = tondi).
+function formaVasiCaselle(a) { return a?.caselleVasi === true ? "tondo" : a?.caselleVasi || ""; }
+function campiMisureVaso(form, cosa, ognuno) {
+  form.querySelector("#w_lunghezza").hidden = cosa === "tondo" || cosa === "quadrato";
+  form.querySelector("label[for=m_larghezza]").textContent = cosa === "tondo" ? `Diametro${ognuno ? " di ognuno" : ""} in metri (es. 0,30 per 30 cm)`
+    : cosa === "quadrato" ? `Lato${ognuno ? " di ognuno" : ""} in metri (es. 0,30 per 30 cm)`
+    : `Larghezza${ognuno ? " di ognuna" : ""} in metri (da sinistra a destra)`;
+}
 // Superficie in m² (0 senza misure): il vaso tondo è un cerchio.
 function mqAiuola(a) {
   if (!a?.larghezza || !a?.lunghezza) return 0;
@@ -307,6 +317,7 @@ function nomeAiuola(a) {
 function nomeAiuolaId(id) { return nomeAiuola(aiuola(id)); }
 function misureAiuola(a) {
   if (a.vaso === "tondo" && a.larghezza) return `Ø ${Math.round(a.larghezza * 100)} cm · ${fmtM(mqAiuola(a))} m²`;
+  if (a.vaso === "quadrato" && a.larghezza) return `lato ${Math.round(a.larghezza * 100)} cm · ${fmtM(mqAiuola(a))} m²`;
   if (a.larghezza && a.lunghezza) return `${fmtM(a.larghezza)} × ${fmtM(a.lunghezza)} m · ${fmtM(mqAiuola(a))} m²`;
   return a.misure || "";
 }
@@ -786,7 +797,7 @@ function moduloAiuola(a) {
   modulo({
     titolo: a ? (a.capanno ? "Modifica capanno" : a.vaso ? "Modifica vaso" : "Modifica aiuola") : "Nuova aiuola",
     campi: [
-      { id: "cosa", etichetta: "Che cos'è", tipo: "select", opzioni: [["", "🟫 Un'aiuola da coltivare"], ["tondo", "🏺 Un vaso tondo"], ["rettangolare", "🏺 Un vaso rettangolare (o una cassetta)"],
+      { id: "cosa", etichetta: "Che cos'è", tipo: "select", opzioni: [["", "🟫 Un'aiuola da coltivare"], ["tondo", "🏺 Un vaso tondo"], ["quadrato", "🏺 Un vaso quadrato"], ["rettangolare", "🏺 Un vaso rettangolare (o una cassetta)"],
         ["capanno", "🧰 Un capanno o deposito degli attrezzi (si disegna, non si coltiva)"]], valore: a?.capanno ? "capanno" : a?.vaso || "" },
       { id: "zona", etichetta: "Zona (es. Orto, Serra)", valore: zonaIniziale, lista: [...new Set([...zone(), "Orto", "Serra"])], richiesto: true },
       { id: "numero", etichetta: "Numero (da sinistra a destra: 1, 2, 3…; anche 0 o negativi)", tipo: "number", passo: "1", valore: a?.numero ?? prossimoNumero(zonaIniziale), richiesto: true },
@@ -804,6 +815,10 @@ function moduloAiuola(a) {
         opzioni: [["", "— no, si ruota —"], ...elencoOrtaggi().map((o) => [o.id, `${o.emoji} ${o.nome}`])], valore: a?.fissa ?? "" },
       { id: "righe", etichetta: "Scacchiera: righe a, b, c… (dal fondo verso di te)", tipo: "number", passo: "1", valore: grigliaAiuola(a).righe },
       { id: "colonne", etichetta: "Scacchiera: colonne 1, 2, 3… (da sinistra a destra)", tipo: "number", passo: "1", valore: grigliaAiuola(a).colonne },
+      { id: "caselleVasi", etichetta: "🏺 Le caselle sono vasi? (sulla mappa ogni casella diventa un vaso e ogni fila è centrata, come i vasi a piramide)", tipo: "select",
+        opzioni: [["", "No, è terra"], ["tondo", "Sì, vasi tondi"], ["quadrato", "Sì, vasi quadrati"], ["rettangolare", "Sì, vasi rettangolari"]], valore: formaVasiCaselle(a) },
+      { id: "vasoL", etichetta: "Misure di ogni vaso: larghezza in metri (da sinistra a destra; facoltativa)", tipo: "number", passo: "0.01", valore: a?.vasoL },
+      { id: "vasoP", etichetta: "Misure di ogni vaso: profondità in metri (dal fondo verso di te; facoltativa)", tipo: "number", passo: "0.01", valore: a?.vasoP },
       { id: "note", etichetta: "Note (esposizione, terreno…)", tipo: "textarea", valore: a?.note },
     ],
     extra: `<p class="tenue piccolo">Con le misure l'app disegna l'orto visto dall'alto, con le aiuole affiancate in ordine di numero.</p>`,
@@ -815,14 +830,19 @@ function moduloAiuola(a) {
       // Capanno: può essere una serra (con la porta) ma niente giro delle serre,
       // pacciamatura, ortaggio fisso, scacchiera. Vaso: niente giro delle serre,
       // pacciamatura, scacchiera; il vaso tondo ha solo il diametro.
-      const capanno = v.cosa === "capanno", vaso = v.cosa === "tondo" || v.cosa === "rettangolare";
-      for (const id of ["giroSerra", "pacciamatura", "righe", "colonne"]) {
+      const capanno = v.cosa === "capanno", vaso = Boolean(VASI[v.cosa]);
+      for (const id of ["giroSerra", "pacciamatura", "righe", "colonne", "caselleVasi"]) {
         const w = form.querySelector(`#w_${id}`);
         if (w) w.hidden = capanno || vaso;
       }
+      // Misure dei vasi della scacchiera: solo se le caselle sono vasi (il tondo e il quadrato hanno una misura sola).
+      const cv = !capanno && !vaso && v.caselleVasi;
+      form.querySelector("#w_vasoL").hidden = !cv;
+      form.querySelector("#w_vasoP").hidden = !cv || v.caselleVasi !== "rettangolare";
+      form.querySelector("label[for=m_vasoL]").textContent = v.caselleVasi === "tondo" ? "Diametro di ogni vaso in metri (facoltativo)"
+        : v.caselleVasi === "quadrato" ? "Lato di ogni vaso in metri (facoltativo)" : "Misure di ogni vaso: larghezza in metri (da sinistra a destra; facoltativa)";
       form.querySelector("#w_fissa").hidden = capanno;
-      form.querySelector("#w_lunghezza").hidden = v.cosa === "tondo";
-      form.querySelector("label[for=m_larghezza]").textContent = v.cosa === "tondo" ? "Diametro in metri (es. 0,30 per 30 cm)" : "Larghezza in metri (da sinistra a destra)";
+      campiMisureVaso(form, v.cosa, false);
       const wp = form.querySelector("#w_porta");
       if (wp) wp.hidden = !(v.copertura === "serra" || (!capanno && v.giroSerra));
       const doppia = S.aiuole.find((x) => x !== a && !x.semenzaio && (x.zona || ZONA_PREDEFINITA) === v.zona && String(x.numero) === v.numero);
@@ -836,13 +856,14 @@ function moduloAiuola(a) {
         zona: v.zona, numero: Number(v.numero), nome: v.nome, note: v.note,
         larghezza: numeroMisura(v.larghezza), lunghezza: numeroMisura(v.lunghezza),
         copertura: v.copertura, giroSerra: !!v.giroSerra, porta: v.porta, pacciamatura: v.pacciamatura, fissa: v.fissa,
-        capanno: v.cosa === "capanno", vaso: v.cosa === "tondo" || v.cosa === "rettangolare" ? v.cosa : "",
+        capanno: v.cosa === "capanno", vaso: VASI[v.cosa] ? v.cosa : "", caselleVasi: v.cosa ? "" : v.caselleVasi,
+        vasoL: v.cosa || !v.caselleVasi ? null : numeroMisura(v.vasoL), vasoP: v.cosa || v.caselleVasi !== "rettangolare" ? null : numeroMisura(v.vasoP),
         fila: Number(v.fila) || 0, inizio: numeroMisura(v.inizio),
         ...grigliaAiuola({ righe: v.righe, colonne: v.colonne }),
       };
       if (dati.capanno) Object.assign(dati, { giroSerra: false, pacciamatura: "", fissa: "", righe: 1, colonne: 1 });
       if (dati.vaso) Object.assign(dati, { giroSerra: false, pacciamatura: "", righe: 1, colonne: 1 });
-      if (dati.vaso === "tondo") dati.lunghezza = dati.larghezza;
+      if (dati.vaso === "tondo" || dati.vaso === "quadrato") dati.lunghezza = dati.larghezza;
       const doppia = S.aiuole.some((x) => x !== a && !x.semenzaio && (x.zona || ZONA_PREDEFINITA) === v.zona && String(x.numero) === v.numero);
       if (doppia && v.faiPosto) for (const [x, nuovo] of spostamentiAiuole(v.zona, dati.numero, a)) x.numero = nuovo;
       if (a) {
@@ -863,10 +884,11 @@ function moduloAiuola(a) {
 function moduloPiuAiuole() {
   const zonaIniziale = zonaScelta() || zone()[0] || ZONA_PREDEFINITA;
   modulo({
-    titolo: "Più aiuole insieme",
+    titolo: "Più aiuole o vasi insieme",
     campi: [
+      { id: "cosa", etichetta: "Che cosa", tipo: "select", opzioni: [["", "🟫 Aiuole"], ["tondo", "🏺 Vasi tondi"], ["quadrato", "🏺 Vasi quadrati"], ["rettangolare", "🏺 Vasi rettangolari (o cassette)"]], valore: "" },
       { id: "zona", etichetta: "Zona (es. Orto principale, Serre)", valore: zonaIniziale, lista: [...new Set([...zone(), "Orto", "Serra"])], richiesto: true },
-      { id: "quante", etichetta: "Quante aiuole", tipo: "number", passo: "1", valore: 4, richiesto: true },
+      { id: "quante", etichetta: "Quante (aiuole o vasi)", tipo: "number", passo: "1", valore: 4, richiesto: true },
       { id: "da", etichetta: "Numero della prima (le altre di seguito)", tipo: "number", passo: "1", valore: prossimoNumero(zonaIniziale), richiesto: true },
       { id: "larghezza", etichetta: "Larghezza di ognuna in metri (da sinistra a destra)", tipo: "number", passo: "0.05" },
       { id: "lunghezza", etichetta: "Lunghezza di ognuna in metri (dal fondo verso di te)", tipo: "number", passo: "0.05" },
@@ -884,9 +906,13 @@ function moduloPiuAiuole() {
         form.elements.da.value = prossimoNumero(v.zona);
         form.elements.corridoio.value = Math.round(corridoioZona(v.zona) * 100);
       }
+      // Vasi: niente giro delle serre, pacciamatura, scacchiera; il tondo ha solo il diametro.
+      const vaso = Boolean(VASI[v.cosa]);
+      for (const id of ["giroSerra", "pacciamatura", "righe", "colonne"]) form.querySelector(`#w_${id}`).hidden = vaso;
+      campiMisureVaso(form, v.cosa, true);
       const n = Math.max(0, Math.min(50, Number(form.elements.quante.value) || 0)), da = Number(form.elements.da.value) || 1;
       const usati = S.aiuole.filter((x) => !x.semenzaio && (x.zona || ZONA_PREDEFINITA) === v.zona && x.numero >= da && x.numero < da + n);
-      return (n ? `<div class="bene">Verranno create le aiuole da ${da} a ${da + n - 1} in «${esc(v.zona)}».</div>` : "")
+      return (n ? `<div class="bene">Verranno creati ${vaso ? "i vasi" : "le aiuole"} da ${da} a ${da + n - 1} in «${esc(v.zona)}».</div>` : "")
         + (usati.length ? `<div class="avviso">Numeri già usati in questa zona: ${usati.map((x) => x.numero).join(", ")}.</div>` : "");
     },
     salva: (v) => {
@@ -894,11 +920,12 @@ function moduloPiuAiuole() {
       if (!n) return false;
       const da = Number(v.da) || prossimoNumero(v.zona);
       for (let k = 0; k < n; k++) {
+        const vaso = VASI[v.cosa] ? v.cosa : "";
         S.aiuole.push({
           id: nuovoId(), zona: v.zona, numero: da + k, nome: "", note: "",
-          larghezza: numeroMisura(v.larghezza), lunghezza: numeroMisura(v.lunghezza),
-          copertura: v.copertura, giroSerra: !!v.giroSerra, pacciamatura: v.pacciamatura,
-          ...grigliaAiuola({ righe: v.righe, colonne: v.colonne }),
+          larghezza: numeroMisura(v.larghezza), lunghezza: numeroMisura(vaso === "tondo" || vaso === "quadrato" ? v.larghezza : v.lunghezza),
+          copertura: v.copertura, giroSerra: !vaso && !!v.giroSerra, pacciamatura: vaso ? "" : v.pacciamatura, vaso,
+          ...grigliaAiuola(vaso ? { righe: 1, colonne: 1 } : { righe: v.righe, colonne: v.colonne }),
         });
       }
       const cm = Number(v.corridoio);
@@ -1692,24 +1719,47 @@ function htmlPianta(soloZona) {
         // Scacchiera: linee e, in ogni casella, l'emoji di chi la occupa.
         const g = grigliaAiuola(a);
         const cw = w / g.colonne, ch = h / g.righe;
+        const manca = celleMancanti(a);
+        // Caselle che sono vasi: un cerchio per casella, ogni fila centrata.
+        const vasi = formaVasiCaselle(a);
+        const colonneFila = (r) => [...Array(g.colonne).keys()].filter((c) => !manca.has(nomeCella(r, c)));
+        const xCella = (r, c) => {
+          if (!vasi) return x + (c + 0.5) * cw;
+          const qui = colonneFila(r);
+          return x + ((g.colonne - qui.length) / 2 + qui.indexOf(c) + 0.5) * cw;
+        };
+        if (vasi) {
+          // Misura del vaso: quella scritta (al massimo la casella), altrimenti quasi tutta la casella.
+          const misura = (m, lato) => Math.min(lato * 0.96, m > 0 ? m : lato * 0.9);
+          const tondo = vasi === "tondo";
+          const vw = vasi === "rettangolare" ? misura(a.vasoL, cw) : misura(a.vasoL, Math.min(cw, ch));
+          const vh = vasi === "rettangolare" ? misura(a.vasoP, ch) : vw;
+          for (let r = 0; r < g.righe; r++) for (const c of colonneFila(r)) {
+            const mx = xCella(r, c), my = y + (r + 0.5) * ch;
+            if (tondo) {
+              const [px, py] = T(mx, my);
+              linee += `<circle class="p-aiuola p-vaso" cx="${px}" cy="${py}" r="${vw / 2}"/>`;
+            } else linee += `<polygon class="p-aiuola p-vaso" points="${punti(angoli(mx - vw / 2, my - vh / 2, vw, vh))}"/>`;
+          }
+        }
         const seg = (x1, y1, x2, y2) => { const [p1, p2] = [T(x1, y1), T(x2, y2)]; return `<line class="p-griglia" x1="${p1[0]}" y1="${p1[1]}" x2="${p2[0]}" y2="${p2[1]}" stroke-width="${fs * 0.06}"/>`; };
         // Linee solo se le caselle sono abbastanza grandi da vederle (almeno 5 px).
-        if (cw * scala >= 5) for (let c = 1; c < g.colonne; c++) linee += seg(x + c * cw, y, x + c * cw, y + h);
-        if (ch * scala >= 5) for (let r = 1; r < g.righe; r++) linee += seg(x, y + r * ch, x + w, y + r * ch);
-        const occ = occupazione(a.id), manca = celleMancanti(a);
+        if (!vasi && cw * scala >= 5) for (let c = 1; c < g.colonne; c++) linee += seg(x + c * cw, y, x + c * cw, y + h);
+        if (!vasi && ch * scala >= 5) for (let r = 1; r < g.righe; r++) linee += seg(x, y + r * ch, x + w, y + r * ch);
+        const occ = occupazione(a.id);
         const libere = [];
         const dim = Math.min(e * 0.85, Math.min(cw, ch) * 0.7);
         for (let r = 0; r < g.righe; r++) for (let c = 0; c < g.colonne; c++) {
           const n = nomeCella(r, c);
           if (manca.has(n)) continue;
-          if (occ[n]) testi += iconaPianta(x + (c + 0.5) * cw, y + (r + 0.5) * ch, PER_ID[occ[n][0].ortaggioId], dim);
+          if (occ[n]) testi += iconaPianta(xCella(r, c), y + (r + 0.5) * ch, PER_ID[occ[n][0].ortaggioId], dim);
           else libere.push([r, c]);
         }
         // Colture su tutta l'aiuola: nelle caselle libere.
         impiantiAttivi(a.id).filter((i) => !i.celle?.length).forEach((i, k) => {
           if (!libere[k]) return;
           const [r, c] = libere[k];
-          testi += iconaPianta(x + (c + 0.5) * cw, y + (r + 0.5) * ch, PER_ID[i.ortaggioId], dim);
+          testi += iconaPianta(xCella(r, c), y + (r + 0.5) * ch, PER_ID[i.ortaggioId], dim);
         });
       } else {
         testi = (posti ? emoji : []).map((em, k) => {
@@ -1728,12 +1778,26 @@ function htmlPianta(soloZona) {
         dentro: [y + fs * 0.9, y + fs * 1.9],
       }[dove];
       etichette.push(T(cx, Math.min(yNumero, yMisura) - fs * 0.7), T(cx, Math.max(yNumero, yMisura) + fs * 0.6));
+      // Vaso troppo piccolo per le icone delle piante: vanno in una riga accanto
+      // alle scritte (sotto le misure; sopra il numero nella fila in fondo;
+      // a destra del vaso nelle file in mezzo).
+      if (a.vaso && tutte.length && posti < tutte.length) {
+        const lato = e * 0.85;
+        if (dove === "dentro") {
+          testi = tutte.map((o, k) => iconaPianta(x + w + lato * (0.7 + k), y + h / 2, o, lato)).join("");
+          etichette.push(T(x + w + lato * (0.7 + tutte.length), y + h / 2));
+        } else {
+          const yIcone = dove === "sopra" ? Math.min(yNumero, yMisura) - fs * 1.3 : Math.max(yNumero, yMisura) + fs * 1.2;
+          testi = tutte.map((o, k) => iconaPianta(cx + (k - (tutte.length - 1) / 2) * lato * 1.05, yIcone, o, lato)).join("");
+          etichette.push(T(cx, yIcone + (dove === "sopra" ? -1 : 1) * fs * 0.7));
+        }
+      }
       const chiaro = dove === "dentro" && a.pacciamatura === "telo" ? " p-chiaro" : "";
       const d = fs * 0.15;
       return `<a href="#orto/${a.id}">
         <title>${esc(nomeAiuola(a))}${misurata ? " · " + esc(misureAiuola(a)) : ""}</title>
         ${a.vaso === "tondo" ? `<circle class="p-aiuola p-vaso${misurata ? "" : " p-senza"}" cx="${T(cx, y + h / 2)[0]}" cy="${T(cx, y + h / 2)[1]}" r="${w / 2}"/>`
-          : `<polygon class="p-aiuola${misurata ? "" : " p-senza"}${a.capanno ? " p-capanno" : ""}${a.vaso ? " p-vaso" : ""}${a.pacciamatura ? " p-" + a.pacciamatura : ""}" points="${punti(angoli(x, y, w, h))}"/>`}
+          : `<polygon class="p-aiuola${misurata ? "" : " p-senza"}${a.capanno ? " p-capanno" : ""}${a.vaso ? " p-vaso" : ""}${formaVasiCaselle(a) && haGriglia(a) ? " p-base-vasi" : ""}${a.pacciamatura ? " p-" + a.pacciamatura : ""}" points="${punti(angoli(x, y, w, h))}"/>`}
         ${a.copertura === "serra" ? `<polygon class="p-serra" points="${punti(angoli(x + d, y + d, Math.max(0, w - 2 * d), Math.max(0, h - 2 * d)))}"/>` : ""}
         ${a.copertura === "serra" && PORTE[a.porta] && a.porta ? (() => {
           // Porta: un tratto marrone a metà del lato da cui si entra.
@@ -1835,7 +1899,7 @@ function legendaPianta(lista) {
   if (lista.some((a) => a.copertura === "serra")) voci.push(`<span><i class="l-serra"></i>🏠 serra</span>`);
   if (lista.some((a) => a.copertura === "serra" && a.porta)) voci.push(`<span><i class="l-porta"></i>porta</span>`);
   if (lista.some((a) => a.capanno)) voci.push(`<span><i class="l-capanno"></i>🧰 attrezzi</span>`);
-  if (lista.some((a) => a.vaso)) voci.push(`<span><i class="l-vaso"></i>🏺 vaso</span>`);
+  if (lista.some((a) => a.vaso || formaVasiCaselle(a))) voci.push(`<span><i class="l-vaso"></i>🏺 vaso</span>`);
   return voci.length > 1 || lista.some((a) => a.copertura === "serra" || a.pacciamatura || a.capanno || a.vaso) ? `<div class="legenda">${voci.join("")}</div>` : "";
 }
 
@@ -2530,4 +2594,5 @@ if ("serviceWorker" in navigator && location.protocol !== "file:") {
 }
 navigator.storage?.persist?.();
 
-disegna();
+// Primo disegno quando sono caricati tutti i file (prova.js e riconosci.js vengono dopo).
+document.addEventListener("DOMContentLoaded", () => disegna());
