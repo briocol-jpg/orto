@@ -36,6 +36,7 @@ const GUIDA = [
     "Scegli l'ortaggio: l'app ti dice la <b>prima data utile</b>.",
     "Copri con il <b>tessuto non tessuto</b>? Scegli 🧣 in <b>Protezione all'inizio</b>: puoi seminare circa 2 settimane prima.",
     "Semi in casa o in vasetti? Mettili nel 🪴 <b>Semenzaio</b>. Quando sono grandi tocca <b>Trapianta</b>.",
+    "Piantine comprate al vivaio? Nel 🪴 Semenzaio tocca <b>🛒 Piantine comprate</b>: vasetti, piantine per vasetto, prezzo, marca, negozio. Poi <b>Trapianta</b>. Nel 📓 Diario vedi quante ne hai comprate e quanto hai speso.",
     "⚠️ in rosso = vicini che non vanno d'accordo. 🔄 = la stessa famiglia c'era da poco. 🤝 = buoni vicini.",
   ] },
   { ico: "🧺", titolo: "Raccogliere e scrivere nel diario", righe: [

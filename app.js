@@ -20,7 +20,18 @@ const FASI = {
   tra: { nome: "Trapianto", breve: "trapianto", verbo: "Trapianta" },
   rac: { nome: "Raccolta", breve: "raccolta", verbo: "Raccogli" },
 };
-const MODI = { sem: "Semina in semenzaio", dir: "Semina a terra", tra: "Trapianto (piantine)" };
+const MODI = { sem: "Semina in semenzaio", dir: "Semina a terra", tra: "Trapianto (piantine)", acq: "Piantine comprate" };
+// Piantine comprate (modo "acq", solo nel semenzaio): i.acquisto = { vasetti, perVasetto,
+// costo, marca, negozio, luogoNegozio }; si trapiantano come quelle seminate.
+const PIANTINE_PER_VASETTO = [1, 4, 6, 9, 12, 15, 20];
+function piantineAcquisto(q) { return (Number(q?.vasetti) || 0) * (Number(q?.perVasetto) || 0); }
+function testoAcquisto(i) {
+  const q = i.acquisto || {};
+  const n = piantineAcquisto(q);
+  return [n ? `${q.vasetti} ${q.vasetti == 1 ? "vasetto" : "vasetti"} da ${q.perVasetto} = ${n} ${n === 1 ? "piantina" : "piantine"}` : "",
+    q.costo ? `€ ${fmtEuro(q.costo)}` : "", q.marca, [q.negozio, q.luogoNegozio].filter(Boolean).join(", ")].filter(Boolean).join(" · ");
+}
+function fmtEuro(n) { return (Math.round(Number(n) * 100) / 100).toFixed(2).replace(".", ","); }
 const TIPI_EVENTO = {
   raccolto: "🧺 Raccolto",
   annaffiatura: "💧 Annaffiatura",
@@ -375,8 +386,13 @@ function stimeImpianto(i) {
   const out = [];
   if (!o) return out;
   const data = daISO(i.data);
-  if (i.modo === "sem" && aiuola(i.aiuolaId)?.semenzaio) {
-    const trap = piuGiorni(data, (o.semTrap || 6) * 7);
+  if ((i.modo === "sem" || i.modo === "acq") && aiuola(i.aiuolaId)?.semenzaio) {
+    // Piantine comprate: si trapiantano dopo pochi giorni, ma non prima della stagione giusta.
+    let trap = piuGiorni(data, i.modo === "acq" ? 3 : (o.semTrap || 6) * 7);
+    if (i.modo === "acq") {
+      const u = primaDataUtile(o.id, "tra", null, "");
+      if (u && u.data > trap && giorniTra(trap, u.data) < 300) trap = u.data;
+    }
     out.push({ tipo: "tra", data: trap, testo: `Trapianto di ${o.nome}` });
     if (o.gg) out.push({ tipo: "rac", data: inStagioneDiRaccolta(o, piuGiorni(trap, o.gg)), testo: `Prima raccolta di ${o.nome}` });
   } else if (o.gg) {
@@ -1058,6 +1074,7 @@ function fmtAnno(d) { return d.getFullYear() === oggi().getFullYear() ? fmt(d) :
 
 function moduloImpianto({ aiuolaId, ortaggioId, impianto, celle } = {}) {
   const i = impianto;
+  if (i?.modo === "acq") { moduloAcquisto(i); return; }
   let ultimoOrtaggio = i?.ortaggioId ?? ortaggioId ?? "";
   // Proposta: la prima aiuola vera; se non ce ne sono, "Nuova aiuola".
   const aiuolaIniziale = i?.aiuolaId ?? aiuolaId ?? aiuoleOrdinate().find(coltivabile)?.id ?? NUOVA_AIUOLA;
@@ -1071,7 +1088,7 @@ function moduloImpianto({ aiuolaId, ortaggioId, impianto, celle } = {}) {
       { id: "aiuolaId", etichetta: "Dove (aiuola)", tipo: "select", opzioni: [...opzioniAiuole(), [NUOVA_AIUOLA, "＋ Nuova aiuola…"]], valore: aiuolaIniziale, richiesto: true },
       ...campiNuovaAiuola(),
       campoCelle(i?.celle ?? celle),
-      { id: "modo", etichetta: "Come", tipo: "select", opzioni: Object.entries(MODI), valore: i?.modo ?? modoPredefinito(ultimoOrtaggio, aiuolaIniziale) },
+      { id: "modo", etichetta: "Come", tipo: "select", opzioni: Object.entries(MODI).filter(([k]) => k !== "acq"), valore: i?.modo ?? modoPredefinito(ultimoOrtaggio, aiuolaIniziale) },
       { id: "protezione", etichetta: "Protezione all'inizio", tipo: "select", opzioni: Object.entries(PROTEZIONI), valore: i?.protezione ?? "" },
       { id: "data", etichetta: "Data", tipo: "date", valore: i?.data ?? aISO(oggi()), richiesto: true },
       { id: "varieta", etichetta: "Varietà (facoltativo)", valore: i?.varieta },
@@ -1127,6 +1144,55 @@ function moduloImpianto({ aiuolaId, ortaggioId, impianto, celle } = {}) {
   });
 }
 
+// Piantine comprate in vasetti: restano nel semenzaio qualche ora o qualche giorno,
+// poi «Trapianta» come le semine.
+function moduloAcquisto(i) {
+  const q = i?.acquisto || {};
+  const altro = q.perVasetto && !PIANTINE_PER_VASETTO.includes(Number(q.perVasetto));
+  modulo({
+    titolo: i ? "Modifica piantine comprate" : "🛒 Piantine comprate",
+    campi: [
+      { id: "ortaggioId", etichetta: "Ortaggio", tipo: "select", opzioni: opzioniOrtaggi(), valore: i?.ortaggioId ?? "", richiesto: true },
+      { id: "varieta", etichetta: "Varietà (facoltativo)", valore: i?.varieta },
+      { id: "vasetti", etichetta: "Quanti vasetti (o confezioni)", tipo: "number", passo: "1", valore: q.vasetti ?? 1, richiesto: true },
+      { id: "perVasetto", etichetta: "Piantine in ogni vasetto", tipo: "select",
+        opzioni: [...PIANTINE_PER_VASETTO.map((n) => [String(n), String(n)]), ["altro", "altro numero…"]], valore: altro ? "altro" : String(q.perVasetto ?? 1) },
+      { id: "perVasettoAltro", etichetta: "Quante piantine in ogni vasetto", tipo: "number", passo: "1", valore: altro ? q.perVasetto : "", nascosto: !altro },
+      { id: "data", etichetta: "Data dell'acquisto", tipo: "date", valore: i?.data ?? aISO(oggi()), richiesto: true },
+      { id: "costo", etichetta: "Quanto hai speso in tutto, in € (facoltativo)", tipo: "number", passo: "0.01", valore: q.costo },
+      { id: "marca", etichetta: "Marca o vivaio che le ha prodotte (facoltativo)", valore: q.marca },
+      { id: "negozio", etichetta: "Negozio (facoltativo)", valore: q.negozio, lista: [...new Set(S.impianti.map((x) => x.acquisto?.negozio).filter(Boolean))] },
+      { id: "luogoNegozio", etichetta: "Dove si trova il negozio (facoltativo)", valore: q.luogoNegozio, lista: [...new Set(S.impianti.map((x) => x.acquisto?.luogoNegozio).filter(Boolean))] },
+      { id: "note", etichetta: "Note (es. F1 ibrido, innestata, resistente a…)", tipo: "textarea", valore: i?.note },
+      ...(i ? [{ id: "finito", etichetta: "Già trapiantate o finite (non più nel semenzaio)", tipo: "check", valore: i.finito }] : []),
+    ],
+    elimina: i ? () => eliminaImpianto(i) : null,
+    aggiorna: (v, form) => {
+      form.querySelector("#w_perVasettoAltro").hidden = v.perVasetto !== "altro";
+      const per = v.perVasetto === "altro" ? Number(v.perVasettoAltro) : Number(v.perVasetto);
+      const n = (Number(v.vasetti) || 0) * (per || 0);
+      const o = PER_ID[v.ortaggioId];
+      const utile = o ? primaDataUtile(v.ortaggioId, "tra", null, "") : null;
+      return (n ? `<div class="bene">🌱 In tutto <b>${n} ${n === 1 ? "piantina" : "piantine"}</b>${Number(v.costo) > 0 ? ` · circa € ${fmtEuro(Number(v.costo) / n)} l'una` : ""}.</div>` : "")
+        + (o && utile ? `<div class="${giorniTra(oggi(), utile.data) > 0 ? "avviso" : "bene"}">📅 Trapianto all'aperto ${giorniTra(oggi(), utile.data) > 0 ? `dal <b>${fmtAnno(utile.data)}</b>: fino ad allora tienile al riparo` : "<b>da subito</b>"}. Annaffiale appena arrivate e, se puoi, lasciale qualche giorno fuori all'ombra prima di trapiantarle.</div>` : "");
+    },
+    salva: (v) => {
+      const per = v.perVasetto === "altro" ? Number(v.perVasettoAltro) || 1 : Number(v.perVasetto) || 1;
+      const vasetti = Math.max(1, Number(v.vasetti) || 1);
+      const dati = {
+        ortaggioId: v.ortaggioId, aiuolaId: "semenzaio", modo: "acq", data: v.data, varieta: v.varieta, note: v.note, celle: [],
+        quantita: `${vasetti * per} piantine`,
+        acquisto: { vasetti, perVasetto: per, costo: v.costo === "" ? null : Number(String(v.costo).replace(",", ".")),
+          marca: v.marca, negozio: v.negozio, luogoNegozio: v.luogoNegozio },
+      };
+      if (i) {
+        if (i.finito && !v.finito) { delete i.esito; delete i.dataFine; }
+        Object.assign(i, dati, { finito: v.finito });
+      } else S.impianti.push({ id: nuovoId(), finito: false, ...dati });
+    },
+  });
+}
+
 function eliminaImpianto(i) {
   const o = PER_ID[i.ortaggioId];
   const collegate = S.eventi.filter((e) => e.impiantoId === i.id).length;
@@ -1173,7 +1239,8 @@ function moduloTrapianto(i) {
       i.esito = "trapiantato";
       S.impianti.push({
         id: nuovoId(), finito: false, ortaggioId: i.ortaggioId, aiuolaId: v.aiuolaId, modo: "tra",
-        data: v.data, varieta: i.varieta, quantita: v.quantita, note: "", daSemenzaio: i.id, celle: celleTrapianto, protezione: v.protezione,
+        data: v.data, varieta: i.varieta, quantita: v.quantita, note: i.modo === "acq" ? `Piantine comprate il ${fmt(daISO(i.data))}: ${testoAcquisto(i)}${i.note ? ". " + i.note : ""}` : "",
+        daSemenzaio: i.id, celle: celleTrapianto, protezione: v.protezione,
         ...(i.piano ? { piano: i.piano } : {}),
       });
     },
@@ -2006,7 +2073,7 @@ function vistaAiuola(a) {
     const avv = htmlAvvisi(a.id, i.ortaggioId, i.data, i.id, i.celle, i.protezione).replace(/<div class="avviso">📅[^<]*<\/div>/, "");
     return `<li>
       <div><b>${icona(o)} ${esc(o.nome)}</b>${i.varieta ? ` <span class="tenue">${esc(i.varieta)}</span>` : ""}${i.celle?.length ? ` · <b>${esc(testoCelle(i))}</b>` : ""}${i.protezione === "tnt" ? " · 🧣 TNT" : ""}</div>
-      <div class="tenue piccolo">${esc(MODI[i.modo] ?? "")} il ${fmt(daISO(i.data))}${i.quantita ? " · " + esc(i.quantita) : ""}${stime ? " · previsti: " + stime : ""}</div>
+      <div class="tenue piccolo">${i.modo === "acq" ? "🛒 " : ""}${esc(MODI[i.modo] ?? "")} il ${fmt(daISO(i.data))}${i.modo === "acq" ? (testoAcquisto(i) ? " · " + esc(testoAcquisto(i)) : "") : i.quantita ? " · " + esc(i.quantita) : ""}${stime ? " · previsti: " + stime : ""}</div>
       ${i.note ? `<div class="piccolo">${esc(i.note)}</div>` : ""}
       ${avv}
       <div class="riga-bottoni">
@@ -2036,6 +2103,7 @@ function vistaAiuola(a) {
     ${htmlScacchiera(a)}
     <section class="carta"><h3 style="margin-top:0">In coltivazione</h3>${htmlAttivi}
       <div class="riga-bottoni"><button id="coltura-qui">＋ ${a.semenzaio ? "Nuova semina" : "Nuova coltura"}</button>
+      ${a.semenzaio ? `<button id="piantine-comprate">🛒 Piantine comprate</button>` : ""}
       <button class="secondario" id="evento-qui">＋ Annotazione</button></div>
     </section>
     ${suggerimentiAiuola(a)}
@@ -2088,7 +2156,7 @@ function vistaDiario() {
   const voci = [
     ...S.impianti.filter((i) => i.data.startsWith(anno)).map((i) => ({
       data: i.data,
-      html: `<li><div class="riga"><span><b>🌱 ${esc(MODI[i.modo] ?? "")}</b> · ${nomeOrtaggio(i.ortaggioId)}${i.varieta ? ` (${esc(i.varieta)})` : ""}
+      html: `<li><div class="riga"><span><b>${i.modo === "acq" ? "🛒" : "🌱"} ${esc(MODI[i.modo] ?? "")}</b> · ${nomeOrtaggio(i.ortaggioId)}${i.varieta ? ` (${esc(i.varieta)})` : ""}
         ${daISO(i.data) > oggi() ? ` <span class="chip-futuro">🔔 in programma</span>` : ""}
         <br><span class="tenue piccolo">${fmt(daISO(i.data))} · ${esc(nomeAiuolaId(i.aiuolaId))}${i.finito ? " · finita" : ""}</span></span>
         <button class="piccolo secondario" data-modifica-imp="${i.id}">✏️ Modifica</button></div></li>`,
@@ -2101,7 +2169,12 @@ function vistaDiario() {
       <select id="anno-diario" style="width:auto">${elencoAnni.map((a) => `<option ${a === anno ? "selected" : ""}>${a}</option>`).join("")}</select>
     </div>
     <div class="riga-bottoni"><button id="nuovo-evento">＋ Annotazione</button><button class="secondario" id="nuova-coltura">＋ Coltura</button>${htmlBottoneMedaglie()}</div>
-    <section class="carta"><h3 style="margin-top:0">Raccolti ${anno}</h3>${tabKg}</section>
+    <section class="carta"><h3 style="margin-top:0">Raccolti ${anno}</h3>${tabKg}${(() => {
+      const comprate = S.impianti.filter((i) => i.modo === "acq" && i.data.startsWith(anno));
+      if (!comprate.length) return "";
+      const n = comprate.reduce((t, i) => t + piantineAcquisto(i.acquisto), 0), euro = comprate.reduce((t, i) => t + (Number(i.acquisto?.costo) || 0), 0);
+      return `<p class="piccolo" style="margin-bottom:0">🛒 Piantine comprate nel ${anno}: <b>${n}</b>${euro ? ` · spesa <b>€ ${fmtEuro(euro)}</b>` : ""}.</p>`;
+    })()}</section>
     <section class="carta"><h3 style="margin-top:0">Annotazioni</h3>
       ${eventi.length ? htmlEventi([...eventi].sort((a, b) => b.data.localeCompare(a.data))) : `<p class="tenue">Nessuna annotazione nel ${anno}.</p>`}
     </section>
@@ -2588,6 +2661,7 @@ function collega(root) {
   const a = param && aiuola(param);
   if (a) {
     su("#coltura-qui", () => moduloImpianto({ aiuolaId: a.id }));
+    su("#piantine-comprate", () => moduloAcquisto());
     su("[data-cella-nuova]", (b) => moduloImpianto({ aiuolaId: a.id, celle: [b.dataset.cellaNuova] }));
     su("#evento-qui", () => moduloEvento({ tipo: "lavoro", aiuolaId: a.id }));
     su("#modifica-aiuola", () => moduloAiuola(a));

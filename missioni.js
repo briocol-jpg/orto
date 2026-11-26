@@ -224,7 +224,7 @@ const MEDAGLIE_ORTO = [
   { id: "diario", ico: "📓", titolo: "Diario fedele", come: "Scrivi nel diario (annaffiature, concimi, raccolti, note) in almeno 6 mesi diversi dello stesso anno.",
     fatto: () => Object.values(perAnno(S.eventi)).some((l) => new Set(l.map((e) => e.data.slice(5, 7))).size >= 6) },
   { id: "semenzaio", ico: "🪴", titolo: "Dal semenzaio all'orto", come: "Trapianta nell'orto 5 colture partite dal tuo semenzaio.",
-    fatto: () => S.impianti.filter((i) => i.daSemenzaio).length >= 5 },
+    fatto: () => S.impianti.filter((i) => i.daSemenzaio && S.impianti.find((x) => x.id === i.daSemenzaio)?.modo !== "acq").length >= 5 },
   { id: "piano", ico: "📋", titolo: "Orto pianificato", come: "Prepara e accetta il piano dell'anno nuovo (🌱 Orto → 📋 Prepara l'orto).",
     fatto: () => S.impianti.some((i) => i.piano) },
   { id: "api", ico: "🐝", titolo: "Amico delle api", come: "Pianta lavanda o rosmarino: i fiori chiamano gli impollinatori.",

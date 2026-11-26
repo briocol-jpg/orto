@@ -144,7 +144,8 @@ function vociAnnoScorso(anno) {
     const inizio = nelPeriodo(o, modo, spostaAnni(i.data, 1), margine);
     const origine = i.daSemenzaio && S.impianti.find((x) => x.id === i.daSemenzaio);
     let semenzaio = null;
-    if (origine) semenzaio = aISO(nelPeriodo(o, "sem", spostaAnni(origine.data, 1), 0));
+    // Piantine comprate l'anno scorso: anche quest'anno si comprano (niente semina in semenzaio).
+    if (origine && origine.modo !== "acq") semenzaio = aISO(nelPeriodo(o, "sem", spostaAnni(origine.data, 1), 0));
     // Durata vera dell'anno scorso, se la coltura è stata chiusa.
     let fine = fineStimata(o, inizio);
     if (i.dataFine && i.esito !== "trapiantato") {
