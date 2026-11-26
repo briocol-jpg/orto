@@ -2510,24 +2510,66 @@ function esportaDati() {
   scaricaFile(`orto-copia-${aISO(oggi())}.json`, JSON.stringify(S, null, 1), "application/json");
 }
 
-// Invia la copia col menu di condivisione del telefono. Chrome su Android non
-// condivide file .json: la copia parte come .txt (il contenuto è lo stesso).
-async function inviaCopia() {
+// «Invia copia»: una finestrella con le scelte. Sul telefono il menu Condividi
+// (WhatsApp, email, Drive…: lì si sceglie l'app); sul computer, dove i siti non
+// possono allegare file, la copia si scarica e si apre WhatsApp Web o la posta,
+// con le istruzioni per allegarla. Chrome su Android non condivide file .json:
+// la copia parte come .txt (il contenuto è lo stesso).
+function fileCopia() {
   S.impostazioni.ultimaCopia = aISO(oggi());
   S.impostazioni.proprietario = profiloAttivo().nome || ""; // chi la riceve sa di chi è l'orto
   salva();
   const nome = `orto-copia-${aISO(oggi())}.txt`;
-  const file = new File([JSON.stringify(S, null, 1)], nome, { type: "text/plain" });
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file], title: "Copia dell'orto", text: "Copia di sicurezza dell'app Il mio orto" });
-    } catch (e) {
-      if (e.name !== "AbortError") alert("Invio non riuscito: " + e.message);
-    }
-    return;
+  return { nome, testo: JSON.stringify(S, null, 1) };
+}
+async function condividiCopia() {
+  const { nome, testo } = fileCopia();
+  const file = new File([testo], nome, { type: "text/plain" });
+  try {
+    await navigator.share({ files: [file], title: "Copia dell'orto", text: "Copia di sicurezza dell'app Il mio orto" });
+    chiudiFinestra();
+  } catch (e) {
+    if (e.name !== "AbortError") alert("Invio non riuscito: " + e.message);
   }
-  scaricaFile(nome, JSON.stringify(S, null, 1), "text/plain");
-  alert("Questo browser non può inviare file direttamente: la copia è stata scaricata nella cartella Download.");
+}
+function scaricaCopia() {
+  const { nome, testo } = fileCopia();
+  scaricaFile(nome, testo, "text/plain");
+  return nome;
+}
+function inviaCopia() {
+  const telefono = Boolean(navigator.canShare && navigator.canShare({ files: [new File(["x"], "x.txt", { type: "text/plain" })] }));
+  const chi = profiloAttivo().nome ? ` di ${profiloAttivo().nome}` : "";
+  apriFinestra(`<h2>📤 Invia la copia dell'orto${esc(chi)}</h2>
+    <p class="tenue piccolo">È un file con tutto l'orto: aiuole, colture, diario. Serve come copia di sicurezza o per farlo vedere a qualcuno.</p>
+    <div class="riga-bottoni" style="flex-direction:column;align-items:stretch">
+      ${telefono
+        ? `<button id="copia-condividi">📤 WhatsApp, email, Drive… (scegli l'app)</button>`
+        : `<button id="copia-whatsapp">💬 WhatsApp</button><button id="copia-email">✉️ Email</button>`}
+      <button class="secondario" id="copia-scarica">💾 Scarica il file</button>
+      <button class="secondario" data-chiudi>Annulla</button>
+    </div>
+    <div id="copia-come"></div>`, (f) => {
+    const come = (html) => { f.querySelector("#copia-come").innerHTML = html; };
+    f.querySelector("#copia-condividi")?.addEventListener("click", condividiCopia);
+    f.querySelector("#copia-scarica").addEventListener("click", () => {
+      const nome = scaricaCopia();
+      come(`<div class="bene">💾 Scaricato: <b>${esc(nome)}</b>, nella cartella <b>Download</b>.</div>`);
+    });
+    f.querySelector("#copia-whatsapp")?.addEventListener("click", () => {
+      const nome = scaricaCopia();
+      window.open("https://web.whatsapp.com/", "_blank", "noopener");
+      come(`<div class="bene">💬 Ho scaricato <b>${esc(nome)}</b> nella cartella <b>Download</b> e aperto WhatsApp Web.
+        Lì apri la chat, tocca <b>📎</b> (o ＋) → <b>Documento</b> e scegli il file dalla cartella Download.</div>`);
+    });
+    f.querySelector("#copia-email")?.addEventListener("click", () => {
+      const nome = scaricaCopia();
+      const corpo = `Ciao, ti mando la copia del mio orto (file ${nome}, allegato).\n\nPer aprirla: app «Il mio orto» → 📍 Luogo → 📥 Aggiungi l'orto di un'altra persona, e scegli il file.`;
+      location.href = `mailto:?subject=${encodeURIComponent("Copia dell'orto" + chi)}&body=${encodeURIComponent(corpo)}`;
+      come(`<div class="bene">✉️ Ho scaricato <b>${esc(nome)}</b> nella cartella <b>Download</b> e preparato l'email.
+        Aggiungi il destinatario, poi <b>📎 Allega</b> il file dalla cartella Download e invia.</div>`);
+    });
+  });
 }
 
 function importaDati(file) {

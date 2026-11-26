@@ -74,27 +74,74 @@ function dopoAggiunta(p) {
   if (confirm(`Fatto: c'è l'orto di ${nomeProfilo(p)}. Vuoi aprirlo adesso?\n(Il tuo resta com'è: lo riapri da 📍 Luogo o quando riapri l'app.)`)) apriProfilo(p.id);
   else disegna();
 }
+function contaOrto(s) {
+  const n = s.aiuole.filter((a) => !a.semenzaio).length, c = (s.impianti || []).length;
+  return `${n} ${n === 1 ? "aiuola" : "aiuole"}, ${c} ${c === 1 ? "coltura" : "colture"}`;
+}
+// Legge una copia dell'orto (testo del file); null se non è valida.
+function leggiCopiaOrto(testo) {
+  try {
+    const s = JSON.parse(testo);
+    if (!s.impostazioni || !Array.isArray(s.aiuole)) throw new Error("non è una copia di questa app");
+    return s;
+  } catch (e) { alert("File non valido: " + e.message); return null; }
+}
 // La copia ricevuta da un'altra persona (📤 Invia copia) diventa un orto in più.
 function aggiungiOrtoDaFile(file) {
   const r = new FileReader();
-  r.onload = () => {
-    let s;
-    try {
-      s = JSON.parse(r.result);
-      if (!s.impostazioni || !Array.isArray(s.aiuole)) throw new Error("non è una copia di questa app");
-    } catch (e) { alert("File non valido: " + e.message); return; }
+  r.onload = () => { const s = leggiCopiaOrto(r.result); if (s) aggiungiOrtoDaDati(s); };
+  r.readAsText(file);
+}
+function aggiungiOrtoDaDati(s) {
+  {
     modulo({
       titolo: "📥 L'orto di un'altra persona",
       campi: [
         { id: "nome", etichetta: "Di chi è questo orto?", valore: s.impostazioni.proprietario || "", richiesto: true },
         ...campoNomeMio(),
       ],
-      extra: `<p class="tenue piccolo">${s.aiuole.filter((a) => !a.semenzaio).length} aiuole, ${(s.impianti || []).length} colture. Diventa un orto in più su questo telefono: il tuo non cambia.</p>`,
+      extra: `<p class="tenue piccolo">${contaOrto(s)}. Diventa un orto in più su questo telefono: il tuo non cambia.</p>`,
       testoSalva: "Aggiungi",
       salva: (v) => { setTimeout(() => dopoAggiunta(aggiungiProfilo(v.nome, s, v.mio)), 0); },
     });
-  };
-  r.readAsText(file);
+  }
+}
+
+// Copia arrivata da «Condividi → Il mio orto» (WhatsApp, email…): il service
+// worker l'ha messa nella cache e ha aperto l'app su #ricevuto.
+async function riceviCopiaCondivisa() {
+  if (location.hash !== "#ricevuto") return;
+  history.replaceState(null, "", "#luogo");
+  disegna();
+  let testo = null;
+  try {
+    const cache = await caches.open("orto-condivisi");
+    const r = await cache.match("ricevuto");
+    if (r) { testo = await r.text(); await cache.delete("ricevuto"); }
+  } catch { /* niente */ }
+  if (!testo) { alert("Non ho trovato il file condiviso. Riprova, oppure in 📍 Luogo scegli il file a mano."); return; }
+  if (IN_PROVA) { alert("Sei nell'orto di prova: esci dalla prova e condividi di nuovo il file."); return; }
+  const s = leggiCopiaOrto(testo);
+  if (!s) return;
+  const att = profiloAttivo();
+  const di = s.impostazioni.proprietario ? `di <b>${esc(s.impostazioni.proprietario)}</b>` : "";
+  apriFinestra(`<h2>📥 Hai ricevuto un orto</h2>
+    <p>Un orto ${di}: ${contaOrto(s)}. Cosa vuoi fare?</p>
+    <div class="riga-bottoni" style="flex-direction:column;align-items:stretch">
+      <button id="ric-altro">👥 È l'orto di un'altra persona: aggiungilo (il mio non cambia)</button>
+      <button class="secondario" id="ric-mio">🔄 È il mio orto: sostituisci quello aperto (${esc(nomeProfilo(att))})</button>
+      <button class="secondario" data-chiudi>Annulla</button>
+    </div>`, (f) => {
+    f.querySelector("#ric-altro").addEventListener("click", () => { chiudiFinestra(); aggiungiOrtoDaDati(s); });
+    f.querySelector("#ric-mio").addEventListener("click", () => {
+      if (!confirm(`Sostituire tutto l'orto «${nomeProfilo(att)}» con quello ricevuto? Aiuole, colture e diario di adesso si perdono.`)) return;
+      localStorage.setItem(CHIAVE, JSON.stringify(s));
+      S = carica();
+      chiudiFinestra();
+      disegna();
+      alert("Fatto: l'orto è stato sostituito.");
+    });
+  });
 }
 function nuovoOrtoVuoto() {
   modulo({
@@ -160,4 +207,10 @@ function collegaProfili(root) {
   el("file-profilo")?.addEventListener("change", (e) => { if (e.target.files[0]) aggiungiOrtoDaFile(e.target.files[0]); e.target.value = ""; });
 }
 
-document.addEventListener("DOMContentLoaded", () => setTimeout(chiediProfilo, 0));
+document.addEventListener("DOMContentLoaded", () => setTimeout(() => {
+  // File condiviso: prima quello (la scelta dell'orto resta all'ultimo usato).
+  if (location.hash === "#ricevuto") {
+    try { sessionStorage.setItem(SESSIONE_PROFILO, profiloAttivo().id); } catch { /* niente */ }
+    riceviCopiaCondivisa();
+  } else chiediProfilo();
+}, 0));

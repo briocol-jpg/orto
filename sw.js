@@ -3,10 +3,13 @@
 // le richieste ai servizi esterni (meteo, clima, terreno) vanno sempre in rete.
 // Ogni download salta la cache HTTP del browser (GitHub Pages la tiene 10
 // minuti): altrimenti una versione nuova potrebbe partire coi file vecchi.
-const VERSIONE = "orto-v48";
+const VERSIONE = "orto-v49";
 // Modello delle malattie e motore (~17 MB): cache a parte, che non si svuota a
 // ogni versione; si riempie al primo uso del riconoscimento da foto.
 const MODELLO = "orto-modello-v1";
+// File ricevuti con «Condividi → Il mio orto» (copia dell'orto da WhatsApp):
+// il service worker lo tiene qui e apre l'app su #ricevuto, che lo legge e lo toglie.
+const CONDIVISI = "orto-condivisi";
 const FILE = [
   "./", "index.html", "style.css", "data.js", "icone.js", "piano.js", "aiuto.js", "profili.js", "app.js", "prova.js", "missioni.js", "riconosci.js", "manifest.webmanifest",
   "icone/icona.svg", "icone/icona-192.png", "icone/icona-512.png",
@@ -23,13 +26,26 @@ self.addEventListener("install", (e) => {
 self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches.keys()
-      .then((nomi) => Promise.all(nomi.filter((n) => n !== VERSIONE && n !== MODELLO).map((n) => caches.delete(n))))
+      .then((nomi) => Promise.all(nomi.filter((n) => n !== VERSIONE && n !== MODELLO && n !== CONDIVISI).map((n) => caches.delete(n))))
       .then(() => self.clients.claim()),
   );
 });
 
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
+  if (e.request.method === "POST" && url.origin === self.location.origin && url.pathname.endsWith("/condividi")) {
+    e.respondWith((async () => {
+      try {
+        const dati = await e.request.formData();
+        const file = dati.getAll("file").find((f) => f && typeof f.text === "function");
+        const testo = file ? await file.text() : String(dati.get("text") || "");
+        const cache = await caches.open(CONDIVISI);
+        await cache.put("ricevuto", new Response(testo, { headers: { "content-type": "text/plain; charset=utf-8" } }));
+      } catch { /* l'app dirà che non ha trovato il file */ }
+      return Response.redirect(new URL("./#ricevuto", self.registration.scope).href, 303);
+    })());
+    return;
+  }
   if (e.request.method !== "GET" || url.origin !== self.location.origin) return;
   if (url.pathname.includes("/modello/")) {
     // File grandi che non cambiano: prima la cache, la rete solo se mancano.
