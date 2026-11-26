@@ -6,6 +6,50 @@
 // =============================================================================
 
 const ICONE = {
+  mandarino: `
+    <path d="M16 6c2-3 6-4 9-3-1 3-5 5-9 4z" fill="#3f8f2a"/>
+    <ellipse cx="16" cy="19" rx="12" ry="10" fill="#f28a1c"/>
+    <ellipse cx="12" cy="15" rx="3.5" ry="2" fill="#f9b25a"/>
+    <path d="M16 9v3" stroke="#6b4a1f" stroke-width="1.6" stroke-linecap="round"/>`,
+  kumquat: `
+    <ellipse cx="11" cy="18" rx="6" ry="8.5" fill="#f5940f" transform="rotate(-15 11 18)"/>
+    <ellipse cx="21.5" cy="17" rx="6" ry="8.5" fill="#f7a524" transform="rotate(15 21.5 17)"/>
+    <path d="M14 6c3-4 8-4 10-2-2 3-6 4-10 2z" fill="#3f8f2a"/>
+    <ellipse cx="9.5" cy="14" rx="1.6" ry="2.6" fill="#fbc76b"/>`,
+  bergamotto: `
+    <path d="M17 5c2-3 7-3 9-1-2 3-6 4-9 1z" fill="#3f8f2a"/>
+    <circle cx="16" cy="18" r="11" fill="#c9cf3a"/>
+    <path d="M6 20a10 10 0 0 0 20 0" fill="#e2cf2e"/>
+    <ellipse cx="12" cy="13.5" rx="3.2" ry="2" fill="#e6ea8a"/>`,
+  lime: `
+    <path d="M17 6c2-3 7-3 9-1-2 3-6 4-9 1z" fill="#2d6a1f"/>
+    <ellipse cx="16" cy="18" rx="12" ry="9.5" fill="#6dbb2f"/>
+    <ellipse cx="11.5" cy="14.5" rx="3.5" ry="2" fill="#a8dd6e"/>
+    <circle cx="27.5" cy="18" r="1.2" fill="#3f8f2a"/>`,
+  calamondino: `
+    <path d="M6 9c5-5 14-6 20-3-5 3-13 5-20 3z" fill="#3f8f2a"/>
+    <circle cx="9" cy="17" r="5" fill="#f28a1c"/><circle cx="20" cy="15" r="5" fill="#f5960f"/>
+    <circle cx="15" cy="24" r="5" fill="#ef7d12"/>
+    <circle cx="7.5" cy="15.5" r="1.3" fill="#f9b25a"/><circle cx="18.5" cy="13.5" r="1.3" fill="#f9b25a"/>`,
+  pompelmo: `
+    <circle cx="16" cy="17" r="13" fill="#f3c34a"/>
+    <path d="M5 21a12 12 0 0 0 22 0z" fill="#f0a24a"/>
+    <ellipse cx="11" cy="11.5" rx="4" ry="2.4" fill="#f8de8c"/>
+    <path d="M16 4v3" stroke="#6b4a1f" stroke-width="1.6" stroke-linecap="round"/>`,
+  cedro: `
+    <path d="M6 18c0-8 6-13 11-13s10 4 10 11c0 8-6 13-11 13S6 25 6 18z" fill="#f2d42c"/>
+    <path d="M9 13c1 0 1 2 2 2M13 9c1 1 0 2 1 3M20 9c0 1 1 2 2 2M22 17c-1 1 0 2-1 3M12 22c1-1 2 0 3-1M17 25c0-1 1-2 2-2" stroke="#d4b414" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+    <path d="M17 5c1-3 5-4 8-3-1 3-4 4-8 3z" fill="#3f8f2a"/>`,
+  chinotto: `
+    <path d="M4 12c6-7 18-8 24-4-6 4-17 6-24 4z" fill="#2d6a1f"/>
+    <circle cx="10" cy="20" r="6" fill="#e36d10"/><circle cx="22" cy="20" r="6" fill="#d8620c"/>
+    <circle cx="8.5" cy="18" r="1.5" fill="#f3a04a"/><circle cx="20.5" cy="18" r="1.5" fill="#f3a04a"/>`,
+  canapa: `
+    <path d="M16 30V14" stroke="#3d7a26" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M16 16C15 10 15 5 16 2c1 3 1 8 0 14z" fill="#4f9a2f"/>
+    <path d="M16 16c-3-4-6-7-9-8 1 3 4 6 9 8z" fill="#4f9a2f"/><path d="M16 16c3-4 6-7 9-8-1 3-4 6-9 8z" fill="#4f9a2f"/>
+    <path d="M16 17c-4-1-8-1-11 1 3 1 7 1 11-1z" fill="#5fae3a"/><path d="M16 17c4-1 8-1 11 1-3 1-7 1-11-1z" fill="#5fae3a"/>
+    <path d="M16 18c-2 1-4 3-5 5 2-1 4-3 5-5zM16 18c2 1 4 3 5 5-2-1-4-3-5-5z" fill="#3d8a26"/>`,
   pisello: `
     <path d="M2 21C7 9 21 4 30 7c-3 11-15 19-28 14z" fill="#5fae3a"/>
     <path d="M5 19.5C11 13 20 9 27 9c-4 8-13 13-22 10.5z" fill="#3d8a26"/>

@@ -24,7 +24,8 @@
 // =============================================================================
 
 const PERENNI = new Set(["fragola", "asparago", "carciofo", "rosmarino", "salvia", "rafano", "menta", "timo",
-  "origano", "melissa", "erbacipollina", "dragoncello", "alloro", "lavanda"]);
+  "origano", "melissa", "erbacipollina", "dragoncello", "alloro", "lavanda",
+  "limone", "arancio", "mandarino", "kumquat", "bergamotto", "lime", "calamondino", "pompelmo", "cedro", "chinotto"]);
 // Ortaggi che producono a lungo: restano fino alla fine del periodo di raccolta.
 const RACCOLTA_LUNGA = new Set(["fagiolino", "fagiolo", "bietola", "porro", "prezzemolo", "basilico", "cavolonero",
   "sedano", "peperoncino", "radicchio", "cicoria"]);

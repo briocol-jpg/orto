@@ -15,6 +15,11 @@
 // =============================================================================
 
 const BASE_ULTIMA_BRINATA = "04-20";
+
+// Consigli comuni agli agrumi in vaso (vicino al lago di Lecco), più quello della specie.
+function AGRUMI_IN_VASO(specifica) {
+  return `${specifica} In vaso: da fine ottobre o novembre, quando di notte si scende sotto i 3–5 °C, portalo al riparo in un posto luminoso e fresco (5–12 °C: serra fredda, veranda, scale; non in casa al caldo) e riportalo fuori ad aprile, dopo le gelate, prima all'ombra per qualche giorno. Annaffia quando la terra è asciutta in superficie, poco d'inverno, mai sottovaso pieno d'acqua (l'acqua piovana è la migliore). Concime per agrumi con ferro e microelementi da marzo a settembre. Rinvaso ogni 2–3 anni in primavera, in terriccio per agrumi ben drenato, con un vaso appena più grande. Pota poco, a fine inverno: togli rami secchi, incrociati e i polloni sotto l'innesto.`;
+}
 const BASE_PRIMA_BRINATA = "11-10";
 
 const FAMIGLIE = {
@@ -32,6 +37,8 @@ const FAMIGLIE = {
   valerianacee: "Valerianacee",
   asparagacee: "Asparagacee",
   lauracee: "Lauracee",
+  rutacee: "Rutacee (agrumi)",
+  cannabacee: "Cannabacee (canapa)",
 };
 
 const ESIGENZE = {
@@ -248,6 +255,41 @@ const ORTAGGI = [
     sem: [], dir: [], tra: [["03-20", "05-31"], ["09-01", "10-10"]], rac: [["06-15", "08-15"]],
     gg: null, dist: "60 × 80 cm",
     note: "Non si mangia, ma attira api e farfalle che impollinano zucchine, pomodori e fragole. Vuole sole e terreno povero. Potala dopo la fioritura senza tagliare nel legno vecchio." },
+  { id: "canapa", nome: "Canapa (Cannabis sativa, industriale)", emoji: "🌿", fam: "cannabacee", esig: "media",
+    sem: [], dir: [["04-20", "05-31"]], tra: [], rac: [["09-01", "10-15"]], gg: 120, dist: "fitta (5–10 cm) per la fibra; 30–50 cm tra le piante per i semi",
+    note: "Si può coltivare solo canapa industriale da sementi certificate (varietà del catalogo europeo, THC sotto lo 0,2%): conserva i cartellini delle sementi e la fattura per almeno un anno (legge 242/2016). Dal 2025 i fiori (infiorescenze) non si possono usare né cedere: si coltiva per i semi, la fibra o come sovescio che migliora il terreno e soffoca le erbacce. Le regole cambiano spesso: controllale prima di seminare. Semina a terra quando la terra è calda, in pieno sole; cresce fino a 2–3 m e vuole poca acqua una volta partita. I semi si raccolgono quando la maggior parte è scura e dura, prima che li mangino gli uccelli." },
+  // Agrumi in vaso: perenni (restano nel loro vaso). «tra» = messa a dimora o
+  // rinvaso in primavera, dopo le gelate; «rac» = quando maturano i frutti.
+  { id: "limone", nome: "Limone", emoji: "🍋", fam: "rutacee", esig: "alta",
+    sem: [], dir: [], tra: [["04-10", "05-31"]], rac: [["10-15", "05-31"]], gg: null, dist: "vaso da 40–60 cm",
+    note: AGRUMI_IN_VASO("Il più delicato col freddo: sotto 0 °C si rovina, ritiralo appena le minime scendono verso 5 °C. Fiorisce più volte l'anno (i «quattro stagioni» hanno sempre fiori e frutti); i limoni restano buoni sulla pianta per settimane.") },
+  { id: "arancio", nome: "Arancio", emoji: "🍊", fam: "rutacee", esig: "alta",
+    sem: [], dir: [], tra: [["04-10", "05-31"]], rac: [["12-01", "03-31"]], gg: null, dist: "vaso da 50–70 cm",
+    note: AGRUMI_IN_VASO("Regge fino a circa −2 °C per poco tempo. Le arance maturano in inverno: raccoglile quando sono colorate e si staccano facilmente.") },
+  { id: "mandarino", nome: "Mandarino (e clementino)", emoji: "🍊", fam: "rutacee", esig: "alta",
+    sem: [], dir: [], tra: [["04-10", "05-31"]], rac: [["11-01", "01-31"]], gg: null, dist: "vaso da 40–60 cm",
+    note: AGRUMI_IN_VASO("Un po' più resistente dell'arancio (fino a circa −3 °C per poco tempo). Raccogli i frutti col picciolo, tagliandolo con le forbici.") },
+  { id: "kumquat", nome: "Mandarino cinese (kumquat)", emoji: "🍊", fam: "rutacee", esig: "media",
+    sem: [], dir: [], tra: [["04-10", "05-31"]], rac: [["12-01", "03-31"]], gg: null, dist: "vaso da 35–50 cm",
+    note: AGRUMI_IN_VASO("Il più resistente: sopporta −5 °C per poco tempo e d'inverno si riposa, ma in vaso le radici gelano prima, quindi riparalo comunque nelle notti più fredde. I frutti si mangiano con la buccia.") },
+  { id: "bergamotto", nome: "Bergamotto", emoji: "🍋", fam: "rutacee", esig: "alta",
+    sem: [], dir: [], tra: [["04-10", "05-31"]], rac: [["11-01", "01-15"]], gg: null, dist: "vaso da 50–60 cm",
+    note: AGRUMI_IN_VASO("Delicato come il limone: sotto 0 °C soffre. Si raccoglie quando la buccia vira dal verde al giallo; si usa soprattutto la buccia, profumatissima.") },
+  { id: "lime", nome: "Lime (limetta)", emoji: "🍋", fam: "rutacee", esig: "alta",
+    sem: [], dir: [], tra: [["04-20", "05-31"]], rac: [["09-01", "12-15"]], gg: null, dist: "vaso da 40–50 cm",
+    note: AGRUMI_IN_VASO("Il più freddoloso: tienilo sempre sopra 5 °C, d'inverno in un posto luminoso e fresco ma non gelido. Raccogli i frutti ancora verdi, quando cedono un po' alla pressione.") },
+  { id: "calamondino", nome: "Calamondino (Citrus mitis)", emoji: "🍊", fam: "rutacee", esig: "media",
+    sem: [], dir: [], tra: [["04-10", "05-31"]], rac: [["11-01", "03-31"]], gg: null, dist: "vaso da 30–40 cm",
+    note: AGRUMI_IN_VASO("Piccolo, perfetto in vaso, quasi sempre carico di frutticini aciduli (per marmellate e bevande). Regge circa −3 °C per poco tempo.") },
+  { id: "pompelmo", nome: "Pompelmo", emoji: "🍊", fam: "rutacee", esig: "alta",
+    sem: [], dir: [], tra: [["04-10", "05-31"]], rac: [["12-01", "04-30"]], gg: null, dist: "vaso da 60–80 cm",
+    note: AGRUMI_IN_VASO("Diventa grande: serve un vaso capiente. Teme il freddo come l'arancio. I frutti maturano lentamente e restano a lungo sulla pianta.") },
+  { id: "cedro", nome: "Cedro", emoji: "🍋", fam: "rutacee", esig: "alta",
+    sem: [], dir: [], tra: [["04-10", "05-31"]], rac: [["10-01", "12-31"]], gg: null, dist: "vaso da 50–70 cm",
+    note: AGRUMI_IN_VASO("Delicato quanto il limone. Frutti grandi con la buccia spessa, ottima candita. I rami sono fragili: lega quelli carichi di frutti.") },
+  { id: "chinotto", nome: "Chinotto", emoji: "🍊", fam: "rutacee", esig: "media",
+    sem: [], dir: [], tra: [["04-10", "05-31"]], rac: [["11-01", "02-28"]], gg: null, dist: "vaso da 35–50 cm",
+    note: AGRUMI_IN_VASO("Compatto e decorativo, regge circa −3 °C per poco tempo. I frutti sono amari: si usano canditi, in sciroppo o nei liquori.") },
 ];
 
 // Consociazioni tradizionali dell'orto (valgono in tutte e due le direzioni).
@@ -362,6 +404,23 @@ const SINTOMI = {
 };
 
 const PROBLEMI = [
+  { id: "cocciniglia", nome: "Cocciniglia (e fumaggine)", tipo: "Insetto", colpisce: ["fam:rutacee", "alloro"],
+    sintomi: ["insetti", "gialle"],
+    riconosci: "Scudetti marroni o batuffoli bianchi cotonosi attaccati a rami, nervature e sotto le foglie, che non si muovono. Le foglie si coprono di melata appiccicosa e poi di una patina nera (fumaggine). Frequente sugli agrumi tenuti al riparo d'inverno.",
+    cura: "Se sono poche toglile con un batuffolo imbevuto di alcol o con uno spazzolino morbido, poi lava le foglie con acqua e sapone molle potassico (toglie anche la fumaggine). Se sono tante: olio bianco (minerale) a fine inverno o a fine estate, mai col caldo sopra 25 °C.",
+    nonBio: "Insetticidi a base di acetamiprid, dove l'etichetta li ammette sugli agrumi.",
+    previeni: "Controlla sotto le foglie quando ritiri e quando rimetti fuori le piante. Al riparo lascia aria tra i vasi; non esagerare col concime azotato." },
+  { id: "minatrice-agrumi", nome: "Minatrice serpentina degli agrumi", tipo: "Insetto", colpisce: ["fam:rutacee"],
+    sintomi: ["gallerie", "arricciate"],
+    riconosci: "Sulle foglie giovani gallerie argentate e sinuose, come scie di lumaca sotto la pelle della foglia; le foglie si arricciano. Colpisce i germogli dell'estate e dell'autunno.",
+    cura: "Togli le foglie più colpite. Olio di neem o spinosad sui germogli nuovi, ripetuto ogni 7–10 giorni finché la pianta mette foglie.",
+    nonBio: "Insetticidi a base di abamectina, dove l'etichetta li ammette sugli agrumi.",
+    previeni: "Le foglie vecchie danneggiate lavorano ancora: non toglierle tutte. Evita concimazioni forti in piena estate, che fanno germogliare proprio quando l'insetto è più attivo." },
+  { id: "clorosi-agrumi", nome: "Clorosi (foglie gialle con nervature verdi)", tipo: "Carenza", colpisce: ["fam:rutacee"],
+    sintomi: ["gialle"],
+    riconosci: "Foglie giovani gialline con le nervature che restano verdi: manca ferro (o la pianta non riesce a prenderlo). Se ingialliscono tutte le foglie, vecchie comprese, manca azoto o le radici soffrono per troppa acqua o freddo.",
+    cura: "Chelato di ferro (sequestrene) sciolto nell'acqua d'annaffiatura, in primavera. Concime per agrumi con microelementi da marzo a settembre. Se il vaso resta fradicio, lascia asciugare e controlla i fori di drenaggio.",
+    previeni: "Annaffia con acqua piovana: l'acqua calcarea del rubinetto blocca il ferro. Terriccio per agrumi, leggermente acido e ben drenato; niente sottovaso pieno." },
   { id: "peronospora-pomodoro", nome: "Peronospora del pomodoro e della patata", tipo: "Fungo", colpisce: ["pomodoro", "patata"],
     sintomi: ["macchie", "frutti", "muffa"],
     riconosci: "Macchie brune o nere che si allargano in fretta, con un bordo chiaro; col tempo umido sotto la foglia c'è una muffetta bianca. I frutti hanno chiazze bruno-verdastre, dure. Arriva dopo giorni di pioggia e caldo umido (giugno–settembre).",
@@ -450,7 +509,7 @@ const PROBLEMI = [
     nonBio: "Acetamiprid o deltametrina sotto le foglie, ripetuto dopo 7–10 giorni: le uova non vengono colpite.",
     previeni: "Controlla le piantine comprate. In serra arieggia; il basilico e il tagete vicino ai pomodori aiutano." },
   { id: "ragnetto", nome: "Ragnetto rosso", tipo: "Acaro",
-    colpisce: ["fagiolo", "fagiolino", "melanzana", "cetriolo", "pomodoro", "peperone", "fragola", "zucchino", "melone"],
+    colpisce: ["fagiolo", "fagiolino", "melanzana", "cetriolo", "pomodoro", "peperone", "fragola", "zucchino", "melone", "fam:rutacee"],
     sintomi: ["ragnatele", "gialle"],
     riconosci: "Le foglie si riempiono di puntini chiari, poi ingialliscono e diventano color bronzo; sotto, ragnatele sottilissime e acari minuscoli. Con caldo secco e in serra.",
     cura: "Bagna sotto le foglie la sera (l'umidità lo frena). Zolfo o sapone molle potassico.",
