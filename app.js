@@ -1202,6 +1202,7 @@ function eliminaImpianto(i) {
   for (const e of S.eventi) if (e.impiantoId === i.id) e.impiantoId = "";
   // Se era un trapianto dal semenzaio, la semina torna in semenzaio.
   const origine = i.daSemenzaio && S.impianti.find((x) => x.id === i.daSemenzaio);
+  if (origine) origine.trapiantate = Math.max(0, (Number(origine.trapiantate) || 0) - (Number(i.piantine) || 0));
   if (origine && origine.esito === "trapiantato") {
     origine.finito = false;
     delete origine.esito;
@@ -1211,8 +1212,21 @@ function eliminaImpianto(i) {
   return true;
 }
 
+// Piantine nel semenzaio: totale (dai vasetti comprati, o dal numero scritto in
+// «Quante»; null se non si sa) e quante restano dopo i trapianti già fatti.
+function piantineTotali(i) {
+  if (i.modo === "acq") return piantineAcquisto(i.acquisto) || null;
+  const n = parseInt(String(i.quantita || "").trim(), 10);
+  return n > 0 ? n : null;
+}
+function piantineRimaste(i) {
+  const tot = piantineTotali(i);
+  return tot == null ? null : Math.max(0, tot - (Number(i.trapiantate) || 0));
+}
+
 function moduloTrapianto(i) {
   const o = PER_ID[i.ortaggioId];
+  const rimaste = piantineRimaste(i);
   modulo({
     titolo: `Trapianta ${o.nome.toLowerCase()}`,
     campi: [
@@ -1221,12 +1235,17 @@ function moduloTrapianto(i) {
       campoCelle(aiuola(i.pianoAiuola) ? i.pianoCelle : []),
       { id: "data", etichetta: "Data del trapianto", tipo: "date", valore: aISO(oggi()), richiesto: true },
       { id: "protezione", etichetta: "Protezione all'inizio", tipo: "select", opzioni: Object.entries(PROTEZIONI), valore: i.protezione ?? "" },
-      { id: "quantita", etichetta: "Quante piantine", valore: i.quantita },
+      { id: "piantine", etichetta: rimaste != null ? `Quante piantine trapianti (nel semenzaio ce ne sono ${rimaste})` : "Quante piantine trapianti", tipo: "number", passo: "1", valore: rimaste ?? "" },
+      { id: "restano", etichetta: "Nel semenzaio ne restano altre: le trapianto dopo", tipo: "check", valore: false, nascosto: rimaste != null },
     ],
     testoSalva: "Trapianta",
     aggiorna: (v, form) => {
       const avvisoCelle = aggiornaSceltaCelle(form, v.aiuolaId, null);
-      return aggiornaNuovaAiuola(v, form) + avvisoCelle
+      const n = Number(v.piantine) || 0;
+      const resto = rimaste != null && n > 0 && n < rimaste
+        ? `<div class="bene">🪴 Nel semenzaio ne restano <b>${rimaste - n}</b>: le trapianti dopo con un altro «Trapianta».</div>`
+        : rimaste != null && n > rimaste ? `<div class="avviso">Nel semenzaio ce ne sono solo ${rimaste}.</div>` : "";
+      return aggiornaNuovaAiuola(v, form) + avvisoCelle + resto
         + htmlAvvisi(v.aiuolaId, i.ortaggioId, v.data, null, form.elements.celle.value.split(",").filter(Boolean), v.protezione)
         + (v.protezione === "tnt" ? `<div class="bene piccolo">${CONSIGLIO_TNT}</div>` : "");
     },
@@ -1234,12 +1253,18 @@ function moduloTrapianto(i) {
       if (!v.aiuolaId) return false;
       v.aiuolaId = aiuolaDaModulo(v);
       const celleTrapianto = celleValide(aiuola(v.aiuolaId), v.celle.split(",").filter(Boolean));
-      i.finito = true;
-      i.dataFine = v.data;
-      i.esito = "trapiantato";
+      const n = Math.max(0, Math.round(Number(v.piantine) || 0));
+      i.trapiantate = (Number(i.trapiantate) || 0) + n;
+      // Restano piantine nel semenzaio? Allora la semina (o l'acquisto) resta aperta.
+      const restano = rimaste != null ? n > 0 && n < rimaste : v.restano;
+      if (!restano) {
+        i.finito = true;
+        i.dataFine = v.data;
+        i.esito = "trapiantato";
+      }
       S.impianti.push({
         id: nuovoId(), finito: false, ortaggioId: i.ortaggioId, aiuolaId: v.aiuolaId, modo: "tra",
-        data: v.data, varieta: i.varieta, quantita: v.quantita, note: i.modo === "acq" ? `Piantine comprate il ${fmt(daISO(i.data))}: ${testoAcquisto(i)}${i.note ? ". " + i.note : ""}` : "",
+        data: v.data, varieta: i.varieta, quantita: n ? `${n} ${n === 1 ? "piantina" : "piantine"}` : "", piantine: n || null, note: i.modo === "acq" ? `Piantine comprate il ${fmt(daISO(i.data))}: ${testoAcquisto(i)}${i.note ? ". " + i.note : ""}` : "",
         daSemenzaio: i.id, celle: celleTrapianto, protezione: v.protezione,
         ...(i.piano ? { piano: i.piano } : {}),
       });
@@ -2074,6 +2099,7 @@ function vistaAiuola(a) {
     return `<li>
       <div><b>${icona(o)} ${esc(o.nome)}</b>${i.varieta ? ` <span class="tenue">${esc(i.varieta)}</span>` : ""}${i.celle?.length ? ` · <b>${esc(testoCelle(i))}</b>` : ""}${i.protezione === "tnt" ? " · 🧣 TNT" : ""}</div>
       <div class="tenue piccolo">${i.modo === "acq" ? "🛒 " : ""}${esc(MODI[i.modo] ?? "")} il ${fmt(daISO(i.data))}${i.modo === "acq" ? (testoAcquisto(i) ? " · " + esc(testoAcquisto(i)) : "") : i.quantita ? " · " + esc(i.quantita) : ""}${stime ? " · previsti: " + stime : ""}</div>
+      ${a.semenzaio && Number(i.trapiantate) > 0 ? `<div class="bene piccolo">🚜 Trapiantate ${i.trapiantate}${piantineRimaste(i) != null ? `, nel semenzaio ne restano <b>${piantineRimaste(i)}</b>` : ""}.</div>` : ""}
       ${i.note ? `<div class="piccolo">${esc(i.note)}</div>` : ""}
       ${avv}
       <div class="riga-bottoni">
