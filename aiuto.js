@@ -65,8 +65,8 @@ const GUIDA = [
     "Ha indovinato? 👍. Ha sbagliato? 👎 e scegli quella giusta: così l'app impara. Poi <b>📤 Invia le foto</b>.",
   ] },
   { ico: "📍", titolo: "La prima volta", righe: [
-    "Vuoi imparare senza paura di sbagliare? Qui sopra tocca <b>🎓 Prova con un orto di esempio</b>: un orto finto con una guida passo passo. Per tornare al tuo tocca <b>Esci dalla prova</b>.",
-    "Nell'orto di prova ci sono anche le <b>🏅 Missioni</b> (bottone giallo in alto): dieci sfide con le medaglie, un quiz e ⏩ la macchina del tempo. È un gioco per imparare, anche a scuola: il tuo orto vero non cambia.",
+    "Vuoi imparare senza paura di sbagliare? Qui sopra tocca <b>🎓 Entra nell'orto didattico</b>: un orto per imparare giocando, con una guida passo passo. Per tornare al tuo tocca <b>Torna al mio orto</b>.",
+    "Nell'orto didattico ci sono anche le <b>🏅 Missioni</b> (bottone giallo in alto): dieci sfide con le medaglie, un quiz e ⏩ la macchina del tempo. È un gioco per imparare, anche a scuola: il tuo orto vero non cambia.",
     "Vai nell'orto e in 📍 Luogo tocca <b>📍 Prendi la posizione col GPS</b>: l'app sistema le date per il tuo clima.",
     "Tocca un ortaggio e poi <b>☆</b> per segnarlo tra i tuoi ★: in ☀️ Oggi puoi vedere solo quelli.",
   ] },

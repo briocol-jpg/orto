@@ -154,7 +154,7 @@ function htmlQuiz() {
 function vistaMissioni() {
   if (!inProva()) {
     return `<h2>🏅 Missioni</h2>
-      <p>Le missioni sono un gioco per imparare: si fanno nell'<b>orto di prova</b>, così il tuo orto vero non cambia.</p>
+      <p>Le missioni sono un gioco per imparare: si fanno nell'<b>orto didattico</b>, così il tuo orto vero non cambia.</p>
       ${htmlInvitoProva()}`;
   }
   const g = gioco();
@@ -278,7 +278,7 @@ function vistaMedaglie() {
       <div style="display:flex;justify-content:space-between;gap:8px"><b>${m.ico} ${m.titolo}</b><span class="tenue piccolo">${vinte[m.id] ? "✅ " + fmt(daISO(vinte[m.id])) + " " + vinte[m.id].slice(0, 4) : ""}</span></div>
       <p style="margin:4px 0 0">${m.come}</p>
     </section>`).join("")}
-    <p class="tenue piccolo">Vuoi giocare con le missioni e il quiz? Si fanno nell'orto di prova, in ❓ → 🎓 Prova con un orto di esempio.</p>`;
+    <p class="tenue piccolo">Vuoi giocare con le missioni e il quiz? Si fanno nell'orto didattico, in ❓ → 🎓 Entra nell'orto didattico.</p>`;
 }
 
 // Dopo ogni disegno: missioni nell'orto di prova, medaglie nell'orto vero.

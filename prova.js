@@ -115,7 +115,7 @@ const PASSI_PROVA = [
   { vai: "#luogo", titolo: "📍 Luogo e copia dei dati", evidenzia: null,
     testo: "Nel tuo orto vero qui metti la posizione col GPS (le date si adattano al tuo clima) e ogni tanto fai «📤 Invia copia» per non perdere i dati." },
   { vai: "#aiuto", titolo: "🎉 Bravo, hai finito!", evidenzia: null,
-    testo: "Adesso sai fare tutto. Vuoi metterti alla prova? Tocca <b>🏅 Missioni</b>: dieci sfide con le medaglie, un quiz e la macchina del tempo. Quando hai finito tocca «Esci dalla prova»: torni al tuo orto e quello di prova si cancella.",
+    testo: "Adesso sai fare tutto. Vuoi metterti alla prova? Tocca <b>🏅 Missioni</b>: dieci sfide con le medaglie, un quiz e la macchina del tempo. Quando hai finito tocca «Torna al mio orto»: torni al tuo orto e quello di prova si cancella.",
     azione: { testo: "🏅 Vai alle missioni", fai: () => { location.hash = "#missioni"; } } },
 ];
 const val = (x) => (typeof x === "function" ? x() : x);
@@ -139,7 +139,7 @@ function completaOrto() {
   const tra = (n) => aISO(piuGiorni(ora, n));
 
   // Se chi prova ha saltato i primi passi, le sue due aiuole le faccio io.
-  const zona = aiuolaMia()?.zona || zonaScelta() || zone()[0] || "Orto di prova";
+  const zona = aiuolaMia()?.zona || zonaScelta() || zone()[0] || "Orto didattico";
   if (!aiuoleMie().length) S.aiuole.push({ id: nuovoId(), zona, numero: 1, larghezza: 2, lunghezza: 2, righe: 4, colonne: 4 });
   if (aiuoleMie().length < 2) S.aiuole.push({ id: nuovoId(), zona, numero: 2, larghezza: 3, lunghezza: 2, copertura: "serra", righe: 1, colonne: 1 });
   S.zone[zona] = { corridoio: 0.3, direzione: 90, ...(S.zone[zona] || {}) };
@@ -233,7 +233,7 @@ function iniziaProva() {
     sessionStorage.setItem(SESSIONE_PASSO, "0");
     sessionStorage.setItem(SESSIONE_CHIUSA, "0");
   } catch (e) {
-    alert("Non riesco a preparare l'orto di prova: " + e.message);
+    alert("Non riesco a preparare l'orto didattico: " + e.message);
     return;
   }
   location.hash = "#orto";
@@ -241,7 +241,7 @@ function iniziaProva() {
 }
 
 function esciProva() {
-  if (!confirm("Uscire dalla prova? L'orto di prova si cancella e torni al tuo orto.")) return;
+  if (!confirm("Tornare al tuo orto? L'orto didattico si cancella (puoi sempre ricominciarlo).")) return;
   try {
     localStorage.removeItem(CHIAVE_PROVA);
     for (const k of [SESSIONE_PROVA, SESSIONE_PASSO, SESSIONE_CHIUSA]) sessionStorage.removeItem(k);
@@ -266,8 +266,8 @@ function disegnaGuidaProva() {
   if (!el("striscia-prova")) {
     const striscia = document.createElement("div");
     striscia.id = "striscia-prova";
-    striscia.innerHTML = `<span>🎓 <b>Orto di prova</b>: tocca e prova tutto, il tuo orto vero non cambia.</span>
-      <button class="piccolo secondario" id="esci-prova-su">Esci dalla prova</button>`;
+    striscia.innerHTML = `<span>🎓 <b>Orto didattico</b>: tocca e prova tutto, il tuo orto vero non cambia.</span>
+      <button class="piccolo secondario" id="esci-prova-su">Torna al mio orto</button>`;
     document.querySelector(".testata").after(striscia);
     el("esci-prova-su").addEventListener("click", esciProva);
   }
@@ -297,7 +297,7 @@ function disegnaGuidaProva() {
         ${p.azione && !fatto ? `<button id="guida-azione">${p.azione.testo}</button>` : ""}
         ${k < PASSI_PROVA.length - 1
           ? (fatto === false ? `<button class="secondario" id="guida-avanti">Salta ▶</button>` : `<button id="guida-avanti">Avanti ▶</button>`)
-          : `<button id="guida-esci">Esci dalla prova</button>`}
+          : `<button id="guida-esci">Torna al mio orto</button>`}
       </div>`;
   const su = (sel, fn) => box.querySelector(sel)?.addEventListener("click", fn);
   const chiudi = (v) => { scriviSessione(SESSIONE_CHIUSA, v ? "1" : "0"); disegnaGuidaProva(); };
@@ -324,15 +324,15 @@ function disegnaGuidaProva() {
 function htmlInvitoProva() {
   if (inProva()) {
     return `<section class="carta invito-prova">
-      <b>🎓 Sei nell'orto di prova.</b>
+      <b>🎓 Sei nell'orto didattico.</b>
       <p class="tenue piccolo" style="margin:4px 0 8px">Puoi ricominciare da capo o tornare al tuo orto.</p>
-      <button id="inizia-prova" class="secondario">↺ Ricomincia la prova</button> <button id="esci-prova">Esci dalla prova</button>
+      <button id="inizia-prova" class="secondario">↺ Ricomincia da capo</button> <button id="esci-prova">Torna al mio orto</button>
     </section>`;
   }
   return `<section class="carta invito-prova">
-    <b>🎓 Impara con un orto di prova</b>
+    <b>🌻 Impara giocando: l'orto didattico</b>
     <p class="tenue piccolo" style="margin:4px 0 8px">Si parte da un orto vuoto: una guida passo passo ti fa creare le aiuole, seminare, annaffiare, raccogliere e trapiantare. Puoi sbagliare quanto vuoi: il tuo orto vero non cambia.</p>
-    <button id="inizia-prova">🎓 Prova con un orto di esempio</button>
+    <button id="inizia-prova">🎓 Entra nell'orto didattico</button>
   </section>`;
 }
 

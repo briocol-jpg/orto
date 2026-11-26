@@ -120,7 +120,7 @@ async function riceviCopiaCondivisa() {
     if (r) { testo = await r.text(); await cache.delete("ricevuto"); }
   } catch { /* niente */ }
   if (!testo) { alert("Non ho trovato il file condiviso. Riprova, oppure in 📍 Luogo scegli il file a mano."); return; }
-  if (IN_PROVA) { alert("Sei nell'orto di prova: esci dalla prova e condividi di nuovo il file."); return; }
+  if (IN_PROVA) { alert("Sei nell'orto didattico: tocca «Torna al mio orto» e condividi di nuovo il file."); return; }
   const s = leggiCopiaOrto(testo);
   if (!s) return;
   const att = profiloAttivo();
