@@ -20,6 +20,10 @@ const GUIDA = [
     "Aiuole su più file, una davanti all'altra? In ✏️ Modifica aiuola scegli <b>In quale fila sta</b> (dietro = verso il fondo, davanti = verso di te) e scrivi a quanti metri dal bordo sinistro comincia.",
     "Qualche quadretto non c'è davvero (vasi a piramide)? Sotto la scacchiera tocca <b>✕ Caselle che non esistono</b>.",
     "Un'aiuola dove metti sempre la stessa pianta (la zucca sul tetto)? In ✏️ Modifica aiuola scegli <b>Sempre lo stesso ortaggio</b> 📌.",
+    "Una serra? In ✏️ Modifica aiuola scegli <b>In serra o tunnel</b> 🏠 e il lato della <b>🚪 Porta</b>: sulla mappa è il tratto marrone.",
+    "Sposti le serre da un anno all'altro? Spunta <b>🔁 Serra spostabile</b> in tutte le aiuole dove possono andare, anche in quelle all'aperto.",
+    "Vasi sparsi in giardino (peperoncini, basilico)? Tocca <b>＋ Nuova aiuola</b> e in <b>Che cos'è</b> scegli 🏺 <b>vaso tondo</b> (scrivi il diametro) o <b>vaso rettangolare</b>. Mettili tutti nella zona «Vasi».",
+    "Il capanno degli attrezzi? Tocca <b>＋ Nuova aiuola</b> e in <b>Che cos'è</b> scegli 🧰 <b>capanno</b>: si vede sulla mappa ma non si coltiva. Se è una serra usata per gli attrezzi, scegli anche <b>In serra o tunnel</b> e la porta.",
   ] },
   { ico: "🔢", titolo: "Cambiare i numeri delle aiuole", righe: [
     "Dai un numero già usato e lascia la spunta <b>Fai posto</b>: le altre aiuole si spostano di uno.",
@@ -43,6 +47,7 @@ const GUIDA = [
   { ico: "📋", titolo: "Preparare l'orto dell'anno nuovo", righe: [
     "In 🌱 Orto tocca <b>📋 Prepara l'orto</b>.",
     "L'app parte da quello che hai coltivato l'anno scorso: togli ✕, cambia i m², aggiungi.",
+    "Hai serre spostabili 🔁? Prima di calcolare spunta dove vanno quest'anno: l'app propone dove l'anno scorso c'era terra nuda.",
     "Tocca <b>🧮 Calcola il piano</b>: ogni aiuola passa all'altra con le sue piante e i suoi quadretti, così la terra cambia ortaggio ogni anno.",
     "Verde = va bene. Arancio = da guardare. Rosso = problema. Con ✏️ cambi aiuola o date.",
     "Tocca <b>✅ Accetta il piano</b>: semine, trapianti e concimi vanno nel 📓 Diario. Non ti va bene? <b>🗑️ Annulla il piano</b>.",

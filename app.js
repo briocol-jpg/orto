@@ -91,6 +91,7 @@ function carica() {
       if (!s.aiuole.some((a) => a.semenzaio)) s.aiuole.unshift(vuoto.aiuole[0]);
       if (!s.zone || typeof s.zone !== "object") s.zone = {};
       migraAiuole(s.aiuole);
+      allineaSerre(s.aiuole);
       return s;
     }
   } catch (e) {
@@ -221,16 +222,46 @@ function aiuola(id) { return S.aiuole.find((a) => a.id === id); }
 const COPERTURE = { "": "All'aperto", serra: "In serra o tunnel" };
 const PACCIAMATURE = { "": "Terra nuda", telo: "Telo di pacciamatura", organica: "Paglia, foglie o erba" };
 const ANTICIPO_SERRA = 21; // giorni: in serra si semina prima e si raccoglie più a lungo
-function inSerra(aiuolaId) { return aiuola(aiuolaId)?.copertura === "serra"; }
+// Serre spostabili: le aiuole con giroSerra sono i posti dove l'orticoltore
+// sposta le serre da un anno all'altro. serraAnni = { "2027": true, ... } dice
+// dove stava la serra in ogni anno (lo scrive il piano della stagione);
+// copertura resta la situazione di adesso. Senza voce per l'anno vale copertura.
+function serraNel(a, anno) {
+  const v = a?.serraAnni?.[String(anno)];
+  return v == null ? a?.copertura === "serra" : !!v;
+}
+// All'apertura: se per l'anno in corso c'è una posizione decisa, la serra è lì.
+function allineaSerre(aiuole) {
+  const anno = String(oggi().getFullYear());
+  for (const a of aiuole) {
+    const v = a.serraAnni?.[anno];
+    if (v != null) a.copertura = v ? "serra" : "";
+  }
+}
+// Porta della serra: lato da cui si entra (la serra si può girare).
+const PORTE = { "": "— non indicata —", sinistra: "A sinistra", destra: "A destra", dietro: "Dietro (verso il fondo)", davanti: "Davanti (verso di te)" };
+// Capanno o deposito degli attrezzi: si disegna nella pianta ma non si coltiva.
+// Vasi: a.vaso = "tondo" (larghezza = lunghezza = diametro) o "rettangolare".
+const VASI = { tondo: "Vaso tondo", rettangolare: "Vaso rettangolare" };
+// Superficie in m² (0 senza misure): il vaso tondo è un cerchio.
+function mqAiuola(a) {
+  if (!a?.larghezza || !a?.lunghezza) return 0;
+  return a.vaso === "tondo" ? Math.PI * (a.larghezza / 2) ** 2 : a.larghezza * a.lunghezza;
+}
+function iconaAiuola(a, serra = a.copertura === "serra") {
+  return a.semenzaio ? "🪴" : a.capanno ? "" : serra ? "🏠" : a.vaso ? "🏺" : "🟫";
+}
+function coltivabile(a) { return Boolean(a) && !a.semenzaio && !a.capanno; }
+function inSerra(aiuolaId, anno) { return serraNel(aiuola(aiuolaId), anno ?? oggi().getFullYear()); }
 // Protezione di una singola coltura (si mette e si toglie): il tessuto non tessuto
 // tiene 2–3 °C in più e ripara dalle brinate leggere, circa 2 settimane di vantaggio.
 const PROTEZIONI = { "": "Nessuna", tnt: "Tessuto non tessuto (TNT)" };
 const ANTICIPO_TNT = 14;
-function anticipo(aiuolaId, protezione) {
-  return (inSerra(aiuolaId) ? ANTICIPO_SERRA : 0) + (protezione === "tnt" ? ANTICIPO_TNT : 0);
+function anticipo(aiuolaId, protezione, anno) {
+  return (inSerra(aiuolaId, anno) ? ANTICIPO_SERRA : 0) + (protezione === "tnt" ? ANTICIPO_TNT : 0);
 }
-function testoVantaggio(aiuolaId, protezione) {
-  const v = [inSerra(aiuolaId) ? "della serra" : "", protezione === "tnt" ? "del tessuto non tessuto" : ""].filter(Boolean);
+function testoVantaggio(aiuolaId, protezione, anno) {
+  const v = [inSerra(aiuolaId, anno) ? "della serra" : "", protezione === "tnt" ? "del tessuto non tessuto" : ""].filter(Boolean);
   return v.length ? ` (contando il vantaggio ${v.join(" e ")})` : "";
 }
 const CONSIGLIO_TNT = "🧣 Tessuto non tessuto: stendilo appena seminato o trapiantato, appoggiato sulle piante o su archetti, coi bordi fermati da terra o sassi. Si annaffia anche attraverso. Nelle giornate calde (sopra 20 °C) aprilo, e toglilo quando le minime restano sopra 8–10 °C o quando la pianta fiorisce (servono gli insetti).";
@@ -249,7 +280,8 @@ function corridoioZona(zona) {
   return c == null ? CORRIDOIO : c;
 }
 function tipoAiuola(a) {
-  return [a.copertura === "serra" ? "in serra" : "", a.pacciamatura ? PACCIAMATURE[a.pacciamatura].toLowerCase() : ""].filter(Boolean).join(" · ");
+  if (a.capanno) return `${a.copertura === "serra" ? "serra usata come capanno degli attrezzi" : "capanno degli attrezzi"}${a.porta && a.copertura === "serra" ? `, porta ${PORTE[a.porta].split(" (")[0].toLowerCase()}` : ""}, non si coltiva`;
+  return [a.copertura === "serra" && a.porta ? `porta ${PORTE[a.porta].split(" (")[0].toLowerCase()}` : "", a.copertura === "serra" ? "in serra" : "", a.giroSerra ? "🔁 giro delle serre spostabili" : "", a.pacciamatura ? PACCIAMATURE[a.pacciamatura].toLowerCase() : ""].filter(Boolean).join(" · ");
 }
 function zone() {
   return [...new Set(S.aiuole.filter((a) => !a.semenzaio).map((a) => a.zona || ZONA_PREDEFINITA))];
@@ -269,12 +301,13 @@ function zonaScelta() {
 function nomeAiuola(a) {
   if (!a) return "";
   if (a.semenzaio) return a.nome;
-  const base = a.nome ? `${a.numero} · ${a.nome}` : `Aiuola ${a.numero}`;
+  const base = a.capanno ? `🧰 ${a.nome || "Capanno"}` : a.vaso && !a.nome ? `${VASI[a.vaso] || "Vaso"} ${a.numero}` : a.nome ? `${a.numero} · ${a.nome}` : `Aiuola ${a.numero}`;
   return zone().length > 1 ? `${base} (${a.zona || ZONA_PREDEFINITA})` : base;
 }
 function nomeAiuolaId(id) { return nomeAiuola(aiuola(id)); }
 function misureAiuola(a) {
-  if (a.larghezza && a.lunghezza) return `${fmtM(a.larghezza)} × ${fmtM(a.lunghezza)} m · ${fmtM(a.larghezza * a.lunghezza)} m²`;
+  if (a.vaso === "tondo" && a.larghezza) return `Ø ${Math.round(a.larghezza * 100)} cm · ${fmtM(mqAiuola(a))} m²`;
+  if (a.larghezza && a.lunghezza) return `${fmtM(a.larghezza)} × ${fmtM(a.lunghezza)} m · ${fmtM(mqAiuola(a))} m²`;
   return a.misure || "";
 }
 function preferito(id) { return S.impostazioni.preferiti.includes(id); }
@@ -345,7 +378,7 @@ function stimeImpianto(i) {
 // Aiuola riservata a un ortaggio che non si sposta: la terra va rinnovata.
 function consiglioFissa(a) {
   const o = PER_ID[a.fissa];
-  return `📌 Qui ogni anno ${esc(o.nome.toLowerCase())}, senza rotazione: la terra va rinnovata. Ogni autunno interra letame maturo (4–5 kg/m²${a.larghezza && a.lunghezza ? `, ${fmtKg(4.5 * a.larghezza * a.lunghezza)} per questa aiuola` : ""}) o stallatico pellettato; ogni 3–4 anni, o se la pianta deperisce presto, togli i primi 20–30 cm di terra e mettine di nuova mescolata a compost.`;
+  return `📌 Qui ogni anno ${esc(o.nome.toLowerCase())}, senza rotazione: la terra va rinnovata. Ogni autunno interra letame maturo (4–5 kg/m²${mqAiuola(a) ? `, ${fmtKg(4.5 * mqAiuola(a))} per questa aiuola` : ""}) o stallatico pellettato; ogni 3–4 anni, o se la pianta deperisce presto, togli i primi 20–30 cm di terra e mettine di nuova mescolata a compost.`;
 }
 
 function avvisiRotazione(aiuolaId, ortaggioId, dataISO, escludiId, celle) {
@@ -598,10 +631,10 @@ function htmlAvvisi(aiuolaId, ortaggioId, dataISO, escludiId, celle, protezione)
   const modo = aiuola(aiuolaId)?.semenzaio ? "sem" : null;
   const fasiOk = modo ? ["sem"] : ["dir", "tra"];
   // In serra si può partire qualche settimana prima e finire dopo.
-  const margine = anticipo(aiuolaId, protezione);
+  const margine = anticipo(aiuolaId, protezione, d.getFullYear());
   const dentro = fasiOk.some((f) => finestreTra(o, f, piuGiorni(d, -margine), piuGiorni(d, margine)).length);
   if (!dentro && fasiOk.some((f) => (o[f] || []).length)) {
-    h += `<div class="avviso">📅 Questa data è fuori dal periodo consigliato per ${esc(o.nome.toLowerCase())}${margine ? `, anche contando ${Math.round(margine / 7)} settimane di vantaggio${testoVantaggio(aiuolaId, protezione).replace(" (contando il vantaggio", "").replace(")", "")}` : ""} (guarda il calendario).</div>`;
+    h += `<div class="avviso">📅 Questa data è fuori dal periodo consigliato per ${esc(o.nome.toLowerCase())}${margine ? `, anche contando ${Math.round(margine / 7)} settimane di vantaggio${testoVantaggio(aiuolaId, protezione, d.getFullYear()).replace(" (contando il vantaggio", "").replace(")", "")}` : ""} (guarda il calendario).</div>`;
   }
   return h;
 }
@@ -712,7 +745,7 @@ function opzioniOrtaggi() {
   return [["", "— scegli —"], ...elencoOrtaggi().map((o) => [o.id, `${preferito(o.id) ? "★ " : ""}${o.emoji} ${o.nome}`])];
 }
 function opzioniAiuole(conSemenzaio = true) {
-  return aiuoleOrdinate().filter((a) => conSemenzaio || !a.semenzaio).map((a) => [a.id, nomeAiuola(a)]);
+  return aiuoleOrdinate().filter((a) => !a.capanno && (conSemenzaio || !a.semenzaio)).map((a) => [a.id, nomeAiuola(a)]);
 }
 
 function prossimoNumero(zona) {
@@ -751,8 +784,10 @@ function moduloAiuola(a) {
   }
   const zonaIniziale = a?.zona || zonaScelta() || zone()[0] || ZONA_PREDEFINITA;
   modulo({
-    titolo: a ? "Modifica aiuola" : "Nuova aiuola",
+    titolo: a ? (a.capanno ? "Modifica capanno" : a.vaso ? "Modifica vaso" : "Modifica aiuola") : "Nuova aiuola",
     campi: [
+      { id: "cosa", etichetta: "Che cos'è", tipo: "select", opzioni: [["", "🟫 Un'aiuola da coltivare"], ["tondo", "🏺 Un vaso tondo"], ["rettangolare", "🏺 Un vaso rettangolare (o una cassetta)"],
+        ["capanno", "🧰 Un capanno o deposito degli attrezzi (si disegna, non si coltiva)"]], valore: a?.capanno ? "capanno" : a?.vaso || "" },
       { id: "zona", etichetta: "Zona (es. Orto, Serra)", valore: zonaIniziale, lista: [...new Set([...zone(), "Orto", "Serra"])], richiesto: true },
       { id: "numero", etichetta: "Numero (da sinistra a destra: 1, 2, 3…; anche 0 o negativi)", tipo: "number", passo: "1", valore: a?.numero ?? prossimoNumero(zonaIniziale), richiesto: true },
       { id: "faiPosto", etichetta: "Fai posto: le altre aiuole cambiano numero (la loro storia resta)", tipo: "check", valore: true, nascosto: true },
@@ -762,6 +797,8 @@ function moduloAiuola(a) {
       { id: "fila", etichetta: "In quale fila sta", tipo: "select", opzioni: OPZIONI_FILA, valore: String(filaAiuola(a || {})) },
       { id: "inizio", etichetta: "Distanza dal bordo sinistro dell'orto, in metri (facoltativo)", tipo: "number", passo: "0.05", valore: a?.inizio },
       { id: "copertura", etichetta: "All'aperto o in serra", tipo: "select", opzioni: Object.entries(COPERTURE), valore: a?.copertura ?? "" },
+      { id: "giroSerra", etichetta: "🔁 Serra spostabile: questa aiuola è uno dei posti dove sposti le serre da un anno all'altro (anche se adesso è all'aperto)", tipo: "check", valore: !!a?.giroSerra },
+      { id: "porta", etichetta: "🚪 Porta della serra: da che lato si entra", tipo: "select", opzioni: Object.entries(PORTE), valore: a?.porta ?? "" },
       { id: "pacciamatura", etichetta: "Pacciamatura", tipo: "select", opzioni: Object.entries(PACCIAMATURE), valore: a?.pacciamatura ?? "" },
       { id: "fissa", etichetta: "Sempre lo stesso ortaggio, ogni anno (non si ruota: es. zucca che sale sul tetto)", tipo: "select",
         opzioni: [["", "— no, si ruota —"], ...elencoOrtaggi().map((o) => [o.id, `${o.emoji} ${o.nome}`])], valore: a?.fissa ?? "" },
@@ -775,6 +812,19 @@ function moduloAiuola(a) {
         form.dataset.zona = v.zona;
         form.elements.numero.value = prossimoNumero(v.zona);
       }
+      // Capanno: può essere una serra (con la porta) ma niente giro delle serre,
+      // pacciamatura, ortaggio fisso, scacchiera. Vaso: niente giro delle serre,
+      // pacciamatura, scacchiera; il vaso tondo ha solo il diametro.
+      const capanno = v.cosa === "capanno", vaso = v.cosa === "tondo" || v.cosa === "rettangolare";
+      for (const id of ["giroSerra", "pacciamatura", "righe", "colonne"]) {
+        const w = form.querySelector(`#w_${id}`);
+        if (w) w.hidden = capanno || vaso;
+      }
+      form.querySelector("#w_fissa").hidden = capanno;
+      form.querySelector("#w_lunghezza").hidden = v.cosa === "tondo";
+      form.querySelector("label[for=m_larghezza]").textContent = v.cosa === "tondo" ? "Diametro in metri (es. 0,30 per 30 cm)" : "Larghezza in metri (da sinistra a destra)";
+      const wp = form.querySelector("#w_porta");
+      if (wp) wp.hidden = !(v.copertura === "serra" || (!capanno && v.giroSerra));
       const doppia = S.aiuole.find((x) => x !== a && !x.semenzaio && (x.zona || ZONA_PREDEFINITA) === v.zona && String(x.numero) === v.numero);
       form.querySelector("#w_faiPosto").hidden = !doppia;
       if (!doppia) return "";
@@ -785,15 +835,22 @@ function moduloAiuola(a) {
       const dati = {
         zona: v.zona, numero: Number(v.numero), nome: v.nome, note: v.note,
         larghezza: numeroMisura(v.larghezza), lunghezza: numeroMisura(v.lunghezza),
-        copertura: v.copertura, pacciamatura: v.pacciamatura, fissa: v.fissa,
+        copertura: v.copertura, giroSerra: !!v.giroSerra, porta: v.porta, pacciamatura: v.pacciamatura, fissa: v.fissa,
+        capanno: v.cosa === "capanno", vaso: v.cosa === "tondo" || v.cosa === "rettangolare" ? v.cosa : "",
         fila: Number(v.fila) || 0, inizio: numeroMisura(v.inizio),
         ...grigliaAiuola({ righe: v.righe, colonne: v.colonne }),
       };
+      if (dati.capanno) Object.assign(dati, { giroSerra: false, pacciamatura: "", fissa: "", righe: 1, colonne: 1 });
+      if (dati.vaso) Object.assign(dati, { giroSerra: false, pacciamatura: "", righe: 1, colonne: 1 });
+      if (dati.vaso === "tondo") dati.lunghezza = dati.larghezza;
       const doppia = S.aiuole.some((x) => x !== a && !x.semenzaio && (x.zona || ZONA_PREDEFINITA) === v.zona && String(x.numero) === v.numero);
       if (doppia && v.faiPosto) for (const [x, nuovo] of spostamentiAiuole(v.zona, dati.numero, a)) x.numero = nuovo;
       if (a) {
         Object.assign(a, dati);
         delete a.misure;
+        // Cambiata a mano la serra di quest'anno: vale anche per la posizione decisa dal piano.
+        const quest = String(oggi().getFullYear());
+        if (a.serraAnni?.[quest] != null) a.serraAnni[quest] = v.copertura === "serra";
         // Caselle che non esistono più dopo aver ridotto la scacchiera.
         for (const i of S.impianti) if (i.aiuolaId === a.id && i.celle) i.celle = celleValide(a, i.celle);
       }
@@ -815,6 +872,7 @@ function moduloPiuAiuole() {
       { id: "lunghezza", etichetta: "Lunghezza di ognuna in metri (dal fondo verso di te)", tipo: "number", passo: "0.05" },
       { id: "corridoio", etichetta: "Vialetto tra un'aiuola e l'altra, in cm", tipo: "number", passo: "1", valore: Math.round(corridoioZona(zonaIniziale) * 100) },
       { id: "copertura", etichetta: "All'aperto o in serra", tipo: "select", opzioni: Object.entries(COPERTURE), valore: "" },
+      { id: "giroSerra", etichetta: "🔁 Serre spostabili: sono i posti dove sposti le serre da un anno all'altro", tipo: "check", valore: false },
       { id: "pacciamatura", etichetta: "Pacciamatura", tipo: "select", opzioni: Object.entries(PACCIAMATURE), valore: "" },
       { id: "righe", etichetta: "Scacchiera di ognuna: righe a, b, c…", tipo: "number", passo: "1", valore: 1 },
       { id: "colonne", etichetta: "Scacchiera di ognuna: colonne 1, 2, 3…", tipo: "number", passo: "1", valore: 1 },
@@ -839,7 +897,7 @@ function moduloPiuAiuole() {
         S.aiuole.push({
           id: nuovoId(), zona: v.zona, numero: da + k, nome: "", note: "",
           larghezza: numeroMisura(v.larghezza), lunghezza: numeroMisura(v.lunghezza),
-          copertura: v.copertura, pacciamatura: v.pacciamatura,
+          copertura: v.copertura, giroSerra: !!v.giroSerra, pacciamatura: v.pacciamatura,
           ...grigliaAiuola({ righe: v.righe, colonne: v.colonne }),
         });
       }
@@ -958,7 +1016,7 @@ function moduloImpianto({ aiuolaId, ortaggioId, impianto, celle } = {}) {
   const i = impianto;
   let ultimoOrtaggio = i?.ortaggioId ?? ortaggioId ?? "";
   // Proposta: la prima aiuola vera; se non ce ne sono, "Nuova aiuola".
-  const aiuolaIniziale = i?.aiuolaId ?? aiuolaId ?? aiuoleOrdinate().find((a) => !a.semenzaio)?.id ?? NUOVA_AIUOLA;
+  const aiuolaIniziale = i?.aiuolaId ?? aiuolaId ?? aiuoleOrdinate().find(coltivabile)?.id ?? NUOVA_AIUOLA;
   let ultimaAiuola = aiuolaIniziale;
   // Coltura nuova: la data proposta segue ortaggio, modo e aiuola finché non la cambi tu.
   let dataProposta = i ? null : aISO(oggi()), ultimaChiave = "";
@@ -1148,7 +1206,7 @@ function consiglioAiuolaVuota(a) {
   const prossima = impiantiAttivi(a.id).sort((x, y) => x.data.localeCompare(y.data))[0];
   const op = prossima && PER_ID[prossima.ortaggioId];
   const esig = op?.esig ?? "media";
-  const mq = a.larghezza && a.lunghezza ? a.larghezza * a.lunghezza : 0;
+  const mq = mqAiuola(a);
   const fatta = ultimaConcimazione(a);
 
   const passi = [];
@@ -1178,7 +1236,7 @@ function consiglioAiuolaVuota(a) {
 function testoConcimazione(a) {
   const prossima = impiantiAttivi(a.id).sort((x, y) => x.data.localeCompare(y.data))[0];
   const esig = PER_ID[prossima?.ortaggioId]?.esig ?? "media";
-  const mq = a.larghezza && a.lunghezza ? a.larghezza * a.lunghezza : 0;
+  const mq = mqAiuola(a);
   return mq ? `Pollina pellettata ${fmtKg(CONCIMI[0].dose[esig] * mq)}` : "Pollina pellettata";
 }
 
@@ -1438,7 +1496,7 @@ function vistaOggi() {
     <section class="carta">
       <h2 style="margin-top:0">Dal tuo orto</h2>${htmlPassi}
       ${(() => {
-        const libere = aiuoleOrdinate().filter((a) => aiuolaVuota(a) && !ultimaConcimazione(a));
+        const libere = aiuoleOrdinate().filter((a) => !a.capanno && aiuolaVuota(a) && !ultimaConcimazione(a));
         return libere.length ? `<p style="margin-bottom:4px">🧺 <b>Aiuole libere da preparare</b> (togliere la pacciamatura, concimare):</p>
           <div>${libere.map((a) => `<a class="chip" href="#orto/${a.id}">${esc(nomeAiuola(a))}</a>`).join("")}</div>` : "";
       })()}
@@ -1517,11 +1575,14 @@ function vistaOrto(idAiuola) {
   const bottoni = zone().length > 1 ? `<div class="scelta-orto">${[["", "Tutti"], ...zone().map((z) => [z, z])].map(([z, t]) =>
     `<button class="chip${z === scelta ? " attiva" : ""}" data-zona-vista="${esc(z)}">${esc(t)}</button>`).join("")}</div>` : "";
   const carte = aiuoleOrdinate().filter((a) => a.semenzaio || !scelta || (a.zona || ZONA_PREDEFINITA) === scelta).map((a) => {
+    if (a.capanno) return `<a class="carta" href="#orto/${a.id}" style="display:block;color:inherit;text-decoration:none">
+      <div class="riga" style="display:flex;justify-content:space-between;gap:8px"><b>${esc(nomeAiuola(a))}</b>
+      <span class="tenue piccolo">${esc([misureAiuola(a), tipoAiuola(a)].filter(Boolean).join(" · "))}</span></div></a>`;
     const attivi = impiantiAttivi(a.id);
     const problemi = attivi.reduce((n, i) => n + avvisiRotazione(a.id, i.ortaggioId, i.data, i.id, i.celle).length
       + avvisiVicini(a.id, i.ortaggioId, i.id, i.celle).cattivi.length, 0);
     return `<a class="carta" href="#orto/${a.id}" style="display:block;color:inherit;text-decoration:none">
-      <div class="riga" style="display:flex;justify-content:space-between;gap:8px"><b>${a.semenzaio ? "🪴" : a.copertura === "serra" ? "🏠" : "🟫"} ${esc(nomeAiuola(a))}</b>
+      <div class="riga" style="display:flex;justify-content:space-between;gap:8px"><b>${iconaAiuola(a)} ${esc(nomeAiuola(a))}</b>
       <span class="tenue piccolo">${esc([misureAiuola(a), tipoAiuola(a)].filter(Boolean).join(" · "))}</span></div>
       <div>${attivi.length ? attivi.map((i) => `<span class="chip">${nomeOrtaggio(i.ortaggioId)}${i.celle?.length ? ` <span class="tenue">${esc(testoCelle(i))}</span>` : ""}</span>`).join("") : `<span class="tenue">vuota</span>`}</div>
       ${problemi ? `<div class="avviso piccolo">⚠️ ${problemi} ${problemi === 1 ? "avviso" : "avvisi"} su rotazione o vicini</div>` : ""}
@@ -1549,7 +1610,7 @@ function htmlPianta(soloZona) {
   const blocchi = zone().filter((z) => !soloZona || z === soloZona).map((zona) => {
     const lista = aiuoleOrdinate().filter((a) => !a.semenzaio && (a.zona || ZONA_PREDEFINITA) === zona);
     if (!lista.length) return "";
-    const misurate = lista.filter((a) => a.larghezza && a.lunghezza);
+    const misurate = lista.filter((a) => a.larghezza && a.lunghezza && !a.capanno);
     const mediaL = misurate.length ? misurate.reduce((s, a) => s + a.larghezza, 0) / misurate.length : 1;
     const mediaH = misurate.length ? misurate.reduce((s, a) => s + a.lunghezza, 0) / misurate.length : 2;
     const corridoio = corridoioZona(zona);
@@ -1596,7 +1657,9 @@ function htmlPianta(soloZona) {
     // Scala in pixel per metro: il disegno occupa la larghezza disponibile (circa 360 px
     // sul telefono, di più sul PC); testo tra 10 e 15 px, non più di un quarto dell'aiuola tipica.
     const disponibile = Math.max(340, (el("app")?.clientWidth || 400) - 70);
-    const scala = Math.min(PX_PER_METRO, disponibile / Math.max(box0.w, 0.5));
+    // Una zona di soli vasi si può ingrandire di più: i vasi sono piccoli.
+    const scalaMax = lista.every((a) => a.vaso || a.capanno) ? PX_PER_METRO * 3 : PX_PER_METRO;
+    const scala = Math.min(scalaMax, disponibile / Math.max(box0.w, 0.5));
     const lati = pezzi.map((q) => Math.min(q.w, q.h)).sort((m, n) => m - n);
     const fs = Math.min(15 / scala, Math.max(10 / scala, lati[Math.floor(lati.length / 2)] / 4)); // testo in metri
     const testo = (px, py, contenuto, classe, size) => {
@@ -1613,7 +1676,7 @@ function htmlPianta(soloZona) {
       // in fondo le ha sopra, quella davanti sotto, quelle in mezzo dentro l'aiuola.
       // Così tra le file resta solo il vialetto vero.
       const dove = file.length === 1 ? "solo" : f === file[0] ? "sopra" : f === file[file.length - 1] ? "sotto" : "dentro";
-      const attivi = impiantiAttivi(a.id);
+      const attivi = a.capanno ? [] : impiantiAttivi(a.id);
       const problemi = attivi.some((i) => avvisiRotazione(a.id, i.ortaggioId, i.data, i.id, i.celle).length
         || avvisiVicini(a.id, i.ortaggioId, i.id, i.celle).cattivi.length);
       const e = fs * 1.25; // lato di un'emoji
@@ -1623,7 +1686,7 @@ function htmlPianta(soloZona) {
       const posti = perRiga * righe;
       const emoji = tutte.length > posti ? [...tutte.slice(0, Math.max(0, posti - 1)), `+${tutte.length - Math.max(0, posti - 1)}`] : tutte;
       const cx = x + w / 2;
-      const griglia = haGriglia(a);
+      const griglia = haGriglia(a) && !a.capanno;
       let testi = "", linee = "";
       if (griglia) {
         // Scacchiera: linee e, in ogni casella, l'emoji di chi la occupa.
@@ -1651,10 +1714,13 @@ function htmlPianta(soloZona) {
       } else {
         testi = (posti ? emoji : []).map((em, k) => {
           const px = cx + ((k % perRiga) - (Math.min(perRiga, emoji.length) - 1) / 2) * e;
-          const py = y + (dove === "dentro" ? fs * 2.4 : fs * 0.3) + Math.floor(k / perRiga) * e + e * 0.5;
+          // Nel vaso le piantine stanno al centro.
+          const su = a.vaso ? (h - Math.min(righe, Math.ceil(emoji.length / perRiga)) * e) / 2 : dove === "dentro" ? fs * 2.4 : fs * 0.3;
+          const py = y + su + Math.floor(k / perRiga) * e + e * 0.5;
           return typeof em === "string" ? testo(px, py, em, "p-emoji", e * 0.85) : iconaPianta(px, py, em, e * 0.85);
         }).join("");
       }
+      if (a.capanno) testi = testo(cx, y + h / 2, "🧰", "p-emoji", Math.min(fs * 2, h * 0.6, w * 0.6));
       const [yNumero, yMisura] = {
         solo: [y - fs * 0.9, y + h + fs * 1.1],
         sopra: [y - fs * 1.8, y - fs * 0.6],
@@ -1666,12 +1732,24 @@ function htmlPianta(soloZona) {
       const d = fs * 0.15;
       return `<a href="#orto/${a.id}">
         <title>${esc(nomeAiuola(a))}${misurata ? " · " + esc(misureAiuola(a)) : ""}</title>
-        <polygon class="p-aiuola${misurata ? "" : " p-senza"}${a.pacciamatura ? " p-" + a.pacciamatura : ""}" points="${punti(angoli(x, y, w, h))}"/>
+        ${a.vaso === "tondo" ? `<circle class="p-aiuola p-vaso${misurata ? "" : " p-senza"}" cx="${T(cx, y + h / 2)[0]}" cy="${T(cx, y + h / 2)[1]}" r="${w / 2}"/>`
+          : `<polygon class="p-aiuola${misurata ? "" : " p-senza"}${a.capanno ? " p-capanno" : ""}${a.vaso ? " p-vaso" : ""}${a.pacciamatura ? " p-" + a.pacciamatura : ""}" points="${punti(angoli(x, y, w, h))}"/>`}
         ${a.copertura === "serra" ? `<polygon class="p-serra" points="${punti(angoli(x + d, y + d, Math.max(0, w - 2 * d), Math.max(0, h - 2 * d)))}"/>` : ""}
+        ${a.copertura === "serra" && PORTE[a.porta] && a.porta ? (() => {
+          // Porta: un tratto marrone a metà del lato da cui si entra.
+          const lp = Math.min(0.8, (a.porta === "sinistra" || a.porta === "destra" ? h : w) * 0.4);
+          const [p1, p2] = {
+            sinistra: [[x, y + h / 2 - lp / 2], [x, y + h / 2 + lp / 2]],
+            destra: [[x + w, y + h / 2 - lp / 2], [x + w, y + h / 2 + lp / 2]],
+            dietro: [[cx - lp / 2, y], [cx + lp / 2, y]],
+            davanti: [[cx - lp / 2, y + h], [cx + lp / 2, y + h]],
+          }[a.porta].map(([px, py]) => T(px, py));
+          return `<line class="p-porta" x1="${p1[0]}" y1="${p1[1]}" x2="${p2[0]}" y2="${p2[1]}" stroke-width="${fs * 0.45}"><title>Porta</title></line>`;
+        })() : ""}
         ${linee}
         ${testi}
-        ${testo(cx, yNumero, `${a.copertura === "serra" ? "🏠" : ""}${esc(a.numero)}${problemi ? " ⚠️" : ""}`, "p-numero" + chiaro, fs * 1.3)}
-        ${testo(cx, yMisura, misurata ? `${fmtM(a.larghezza)}×${fmtM(a.lunghezza)}` : "misure?", "p-misura" + chiaro, fs * 0.8)}
+        ${testo(cx, yNumero, a.capanno ? esc(a.nome || "Capanno") : `${a.copertura === "serra" ? "🏠" : ""}${esc(a.numero)}${problemi ? " ⚠️" : ""}`, "p-numero" + chiaro, fs * (a.capanno ? 0.9 : 1.3))}
+        ${testo(cx, yMisura, misurata ? (a.vaso === "tondo" ? `Ø${Math.round(a.larghezza * 100)} cm` : `${fmtM(a.larghezza)}×${fmtM(a.lunghezza)}`) : "misure?", "p-misura" + chiaro, fs * 0.8)}
       </a>`;
     }).join("");
 
@@ -1688,15 +1766,15 @@ function htmlPianta(soloZona) {
       maxY = Math.max(maxY, ay + fs * 3.6);
     }
     const larghezzaBox = maxX - minX, altezzaBox = maxY - minY;
-    const superficie = misurate.reduce((s, a) => s + a.larghezza * a.lunghezza, 0);
+    const superficie = misurate.reduce((s, a) => s + mqAiuola(a), 0);
     return `<section class="carta">
       <h3 style="margin-top:0">${esc(zona)} · vista dall'alto</h3>
-      <svg class="pianta" style="max-width:${Math.round(larghezzaBox * scala * (scala < PX_PER_METRO ? 1.2 : 1))}px" viewBox="${minX} ${minY} ${larghezzaBox} ${altezzaBox}" role="img" aria-label="Pianta di ${esc(zona)}">${disegno}${nord}</svg>
+      <svg class="pianta" style="max-width:${Math.round(larghezzaBox * scala * (scala < scalaMax ? 1.2 : 1))}px" viewBox="${minX} ${minY} ${larghezzaBox} ${altezzaBox}" role="img" aria-label="Pianta di ${esc(zona)}">${disegno}${nord}</svg>
       ${legendaPianta(lista)}
       ${consiglioSole(zona, lista)}
       <p class="tenue piccolo">${or.attivo ? `La fila va ${esc(DIREZIONI_TESTO(or.gradi))}.` : "Disegno dritto: l'orientamento della zona non è indicato."}
       Aiuole in ordine di numero${dietro ? `, in ${file.length} file` : ""}, ${corridoio ? `con vialetti di ${Math.round(corridoio * 100)} cm` : "senza vialetti"}. Lunghezza totale circa ${fmtM(larghezzaTot)} m${superficie ? ` · ${fmtM(superficie)} m² coltivati` : ""}.
-      ${misurate.length < lista.length ? "Le aiuole tratteggiate non hanno ancora le misure: toccale e premi «Modifica aiuola» per inserirle." : ""} Tocca un'aiuola per aprirla.</p>
+      ${lista.some((a) => !(a.larghezza && a.lunghezza)) ? "Le aiuole tratteggiate non hanno ancora le misure: toccale e premi «Modifica aiuola» per inserirle." : ""} Tocca un'aiuola per aprirla.</p>
       <button class="piccolo secondario" data-zona="${esc(zona)}">⚙️ Nome, vialetti, orientamento, numeri</button>
     </section>`;
   }).join("");
@@ -1751,11 +1829,14 @@ function consiglioSole(zona, lista) {
 
 function legendaPianta(lista) {
   const voci = [];
-  if (lista.some((a) => !a.pacciamatura && a.copertura !== "serra")) voci.push(`<span><i class="l-terra"></i>terra nuda</span>`);
+  if (lista.some((a) => !a.capanno && !a.vaso && !a.pacciamatura && a.copertura !== "serra")) voci.push(`<span><i class="l-terra"></i>terra nuda</span>`);
   if (lista.some((a) => a.pacciamatura === "telo")) voci.push(`<span><i class="l-telo"></i>telo</span>`);
   if (lista.some((a) => a.pacciamatura === "organica")) voci.push(`<span><i class="l-organica"></i>paglia, foglie</span>`);
   if (lista.some((a) => a.copertura === "serra")) voci.push(`<span><i class="l-serra"></i>🏠 serra</span>`);
-  return voci.length > 1 || lista.some((a) => a.copertura === "serra" || a.pacciamatura) ? `<div class="legenda">${voci.join("")}</div>` : "";
+  if (lista.some((a) => a.copertura === "serra" && a.porta)) voci.push(`<span><i class="l-porta"></i>porta</span>`);
+  if (lista.some((a) => a.capanno)) voci.push(`<span><i class="l-capanno"></i>🧰 attrezzi</span>`);
+  if (lista.some((a) => a.vaso)) voci.push(`<span><i class="l-vaso"></i>🏺 vaso</span>`);
+  return voci.length > 1 || lista.some((a) => a.copertura === "serra" || a.pacciamatura || a.capanno || a.vaso) ? `<div class="legenda">${voci.join("")}</div>` : "";
 }
 
 function suggerimentiAiuola(a) {
@@ -1810,6 +1891,13 @@ function htmlScacchiera(a) {
 }
 
 function vistaAiuola(a) {
+  if (a.capanno) return `<p><a href="#orto">← Le aiuole</a></p>
+    <h2>${esc(nomeAiuola(a))}</h2>
+    <p class="tenue">${esc([misureAiuola(a), tipoAiuola(a)].filter(Boolean).join(" · "))}</p>
+    ${a.note ? `<p>${esc(a.note)}</p>` : ""}
+    <p class="tenue piccolo">Serve solo a disegnare l'orto com'è davvero: qui non si semina e non conta nei m² coltivati.</p>
+    <div class="riga-bottoni"><button class="secondario" id="modifica-aiuola">✏️ Modifica</button>
+      <button class="secondario" id="elimina-aiuola">🗑️ Elimina</button></div>`;
   const attivi = impiantiAttivi(a.id).sort((x, y) => x.data.localeCompare(y.data));
   const storici = S.impianti.filter((i) => i.finito && i.aiuolaId === a.id).sort((x, y) => y.data.localeCompare(x.data));
   const eventi = S.eventi.filter((e) => e.aiuolaId === a.id).sort((x, y) => y.data.localeCompare(x.data)).slice(0, 15);
@@ -1841,7 +1929,7 @@ function vistaAiuola(a) {
 
   return `
     <p><a href="#orto">← Tutte le aiuole</a></p>
-    <h2>${a.semenzaio ? "🪴" : a.copertura === "serra" ? "🏠" : "🟫"} ${esc(nomeAiuola(a))}</h2>
+    <h2>${iconaAiuola(a)} ${esc(nomeAiuola(a))}</h2>
     ${misureAiuola(a) || tipoAiuola(a) ? `<p class="tenue">${esc([misureAiuola(a), tipoAiuola(a)].filter(Boolean).join(" · "))}</p>` : ""}
     ${a.note ? `<p>${esc(a.note)}</p>` : ""}
     ${PER_ID[a.fissa] ? `<div class="bene">${consiglioFissa(a)}</div>` : ""}

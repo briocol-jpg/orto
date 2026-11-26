@@ -11,6 +11,11 @@
 //    l'inverno occupano il posto finché non si raccolgono).
 // 3. Nelle aiuole con la scacchiera sceglie le caselle a blocchi, lontano da
 //    dove c'era la stessa famiglia e dai cattivi vicini.
+// Serre spostabili (aiuole con giroSerra): in ogni zona il piano propone dove
+//    vanno le serre nell'anno nuovo, prima dove l'anno scorso c'era terra nuda,
+//    poi dove la serra è rimasta meno anni di fila (la terra sotto la serra si
+//    stanca: niente pioggia, sali, malattie). L'utente può cambiare la scelta.
+//    Le colture che erano in serra seguono la serra (punteggio «serra»).
 // 4. «Accetta» crea le colture in programma (e le semine in semenzaio, con
 //    aiuola e caselle già pronte per «Trapianta») e una concimazione per
 //    aiuola nel diario, tutte segnate con piano: <anno>. «Annulla il piano»
@@ -31,12 +36,51 @@ function annoPiano() {
   const o = oggi();
   return S.piano?.anno ?? (o.getMonth() >= 8 ? o.getFullYear() + 1 : o.getFullYear());
 }
-function aiuoleVere() { return aiuoleOrdinate().filter((a) => !a.semenzaio); }
+function aiuoleVere() { return aiuoleOrdinate().filter(coltivabile); }
+
+// -----------------------------------------------------------------------------
+// Serre spostabili
+// -----------------------------------------------------------------------------
+// Posti del giro delle serre, divisi per zona (solo le zone dove si può davvero
+// spostare qualcosa: almeno una serra e almeno un posto libero).
+function giriSerre(anno) {
+  const perZona = new Map();
+  for (const a of aiuoleVere().filter((x) => x.giroSerra)) {
+    const z = a.zona || ZONA_PREDEFINITA;
+    if (!perZona.has(z)) perZona.set(z, []);
+    perZona.get(z).push(a);
+  }
+  return [...perZona].map(([zona, posti]) => ({ zona, posti, serre: posti.filter((a) => serraNel(a, anno - 1)).length }))
+    .filter((g) => g.serre > 0 && g.serre < g.posti.length);
+}
+// Anni di fila sotto la serra fino all'anno scorso (0 = l'anno scorso era all'aperto).
+function anniSottoSerra(a, anno) {
+  let n = 0;
+  while (n < 6 && serraNel(a, anno - 1 - n)) n++;
+  return n;
+}
+// Proposta: in ogni zona le serre vanno nei posti dove sono state meno anni di fila.
+function proponiSerre(anno) {
+  const out = {};
+  for (const g of giriSerre(anno)) {
+    // A parità di anni si sposta la serra più vicina a un posto libero (meno strada).
+    const liberi = g.posti.filter((a) => !serraNel(a, anno - 1));
+    const distanza = (a) => Math.min(...liberi.map((b) => Math.abs((Number(a.numero) || 0) - (Number(b.numero) || 0)) + Math.abs(filaAiuola(a) - filaAiuola(b))));
+    const ordine = [...g.posti].sort((x, y) => anniSottoSerra(x, anno) - anniSottoSerra(y, anno) || distanza(y) - distanza(x) || (Number(x.numero) || 0) - (Number(y.numero) || 0));
+    ordine.forEach((a, k) => { out[a.id] = k < g.serre; });
+  }
+  return out;
+}
+// La serra di un'aiuola nell'anno del piano (bozza compresa).
+function serraNelPiano(a, P) {
+  const v = P?.serre?.[a.id];
+  return v == null ? serraNel(a, P?.anno ?? annoPiano()) : v;
+}
 function areaMediana() {
-  const note = S.aiuole.filter((x) => !x.semenzaio && x.larghezza && x.lunghezza).map((x) => x.larghezza * x.lunghezza).sort((p, q) => p - q);
+  const note = S.aiuole.filter((x) => coltivabile(x) && mqAiuola(x)).map(mqAiuola).sort((p, q) => p - q);
   return note.length ? note[Math.floor(note.length / 2)] : 1;
 }
-function areaAiuola(a) { return a?.larghezza && a?.lunghezza ? a.larghezza * a.lunghezza : areaMediana(); }
+function areaAiuola(a) { return mqAiuola(a) || areaMediana(); }
 function celleTotali(a) { return Math.max(1, tutteLeCelle(a).length); }
 function tutteLeCelle(a) {
   const g = grigliaAiuola(a), out = [], via = celleMancanti(a);
@@ -94,7 +138,7 @@ function vociAnnoScorso(anno) {
   for (const i of S.impianti) {
     const a = aiuola(i.aiuolaId), o = PER_ID[i.ortaggioId];
     if (!a || a.semenzaio || !o || !i.data.startsWith(prima) || PERENNI.has(o.id) || i.piano === anno) continue;
-    const serra = a.copertura === "serra", protezione = i.protezione || "", margine = anticipo(a.id, protezione);
+    const serra = serraNel(a, anno - 1), protezione = i.protezione || "", margine = anticipo(a.id, protezione, anno - 1);
     const modo = i.modo === "tra" ? "tra" : "dir";
     const inizio = nelPeriodo(o, modo, spostaAnni(i.data, 1), margine);
     const origine = i.daSemenzaio && S.impianti.find((x) => x.id === i.daSemenzaio);
@@ -139,9 +183,9 @@ function nuovaBozza() {
     if (!PER_ID[a.fissa] || lista.some((v) => v.origine === a.id && v.ortaggioId === a.fissa)) continue;
     let v = lista.find((x) => x.ortaggioId === a.fissa && !aiuola(x.origine)?.fissa);
     if (!v) lista.push(v = voceNuova(a.fissa, anno));
-    Object.assign(v, { origine: a.id, frazioneOrigine: 1, area: Math.round(areaAiuola(a) * 100) / 100, serra: a.copertura === "serra" });
+    Object.assign(v, { origine: a.id, frazioneOrigine: 1, area: Math.round(areaAiuola(a) * 100) / 100, serra: serraNel(a, anno - 1) });
   }
-  S.piano = { anno, creato: aISO(oggi()), lista, proposte: null };
+  S.piano = { anno, creato: aISO(oggi()), lista, proposte: null, serre: proponiSerre(anno) };
 }
 // Voci che vanno per forza nella loro aiuola riservata: chiave -> id aiuola.
 function vociRiservate(ctx) {
@@ -324,7 +368,7 @@ function punteggio(v, a, presenti, ctx, conMotivi) {
   if (cattivi.length) dice("pericolo", `⚠️ Vicino a ${cattivi.map((id) => PER_ID[id].nome.toLowerCase()).join(", ")}, che non vanno d'accordo con ${o.nome.toLowerCase()}.`);
 
   // Serra
-  const serra = a.copertura === "serra";
+  const serra = serraNelPiano(a, ctx.P);
   if (v.serra && serra) { p += 20; dice("bene", "🏠 In serra, come l'anno scorso."); }
   else if (v.serra && !serra) { p -= 20; dice("avviso", "🏠 L'anno scorso era in serra, qui è all'aperto."); }
   else if (!v.serra && serra) p -= 15; // la serra a chi ne ha bisogno
@@ -549,7 +593,7 @@ function piazzaCelle(a, v, ctx, assegna) {
 
 function contesto(P) {
   return {
-    anno: P.anno, aiuole: aiuoleVere(), pulite: new Map(), storia: storiaAiuole(P.anno), fisse: occupazioniFisse(P.anno),
+    P, anno: P.anno, aiuole: aiuoleVere(), pulite: new Map(), storia: storiaAiuole(P.anno), fisse: occupazioniFisse(P.anno),
     voci: new Map(P.lista.filter((v) => PER_ID[v.ortaggioId]).map((v) => [v.k, v])),
   };
 }
@@ -622,6 +666,7 @@ function vistaPiano() {
       </section>`;
   }
   const P = S.piano;
+  P.serre ??= proponiSerre(P.anno); // bozze di prima delle serre spostabili
   return `${intestazione}${htmlListaPiano(P)}${P.proposte ? htmlProposte(P) : ""}`;
 }
 
@@ -665,11 +710,28 @@ function htmlListaPiano(P) {
         <button class="secondario" id="piano-aggiungi">＋ Aggiungi</button>
       </div>
       ${htmlRestano(P.anno)}
+      ${htmlSerrePiano(P)}
       <div class="riga-bottoni">
         <button id="piano-calcola">${P.proposte ? "🔄 Ricalcola il piano" : "🧮 Calcola il piano"}</button>
         <button class="secondario" id="piano-scarta">Lascia perdere la bozza</button>
       </div>
     </section>`;
+}
+
+// Dove vanno le serre spostabili nell'anno del piano (spunte, per zona).
+function htmlSerrePiano(P) {
+  const giri = giriSerre(P.anno);
+  if (!giri.length) return "";
+  return giri.map((g) => {
+    const coperte = g.posti.filter((a) => serraNelPiano(a, P)).length;
+    return `<div style="margin:8px 0;padding:8px 10px;border:1px solid var(--linea);border-radius:10px">
+      <p style="margin:0 0 4px"><b>🔁 Serre spostabili${giri.length > 1 ? ` · ${esc(g.zona)}` : ""}</b>: dove le metti nel ${P.anno}?</p>
+      <p class="tenue piccolo" style="margin:0 0 4px">Proposta: la serra va dove l'anno scorso c'era terra nuda, così sotto la serra la terra si riposa. Le colture che erano in serra la seguono.${P.proposte ? " Se cambi le spunte premi «Ricalcola il piano»." : ""}</p>
+      ${g.posti.map((a) => `<label class="campo-check" style="margin:2px 0"><input type="checkbox" data-piano-serra="${a.id}" ${serraNelPiano(a, P) ? "checked" : ""}>
+        ${esc(nomeAiuola(a))} <span class="tenue piccolo">· nel ${P.anno - 1} ${serraNel(a, P.anno - 1) ? "🏠 in serra" : "all'aperto"}</span></label>`).join("")}
+      ${coperte !== g.serre ? `<div class="avviso piccolo" style="margin:4px 0">Hai ${g.serre} ${g.serre === 1 ? "serra" : "serre"} e ne hai spuntate ${coperte}.</div>` : ""}
+    </div>`;
+  }).join("");
 }
 
 function htmlMiniScacchiera(a, qui, ctx) {
@@ -719,8 +781,9 @@ function htmlProposte(P) {
       </li>`;
     }).join("");
     return `<section class="carta">
-      <div class="riga" style="display:flex;justify-content:space-between;gap:8px"><b>${a.copertura === "serra" ? "🏠" : "🟫"} ${esc(nomeAiuola(a))}</b>
+      <div class="riga" style="display:flex;justify-content:space-between;gap:8px"><b>${iconaAiuola(a, serraNelPiano(a, P))} ${esc(nomeAiuola(a))}</b>
         <span class="tenue piccolo">${esc(misureAiuola(a))}</span></div>
+      ${a.giroSerra && serraNelPiano(a, P) !== serraNel(a, P.anno - 1) ? `<div class="bene piccolo" style="margin:4px 0">${serraNelPiano(a, P) ? `🔁 Qui arriva una serra spostabile: nel ${P.anno - 1} era all'aperto.` : `🔁 La serra va via: nel ${P.anno - 1} era coperta, ora la terra prende pioggia e sole.`}</div>` : ""}
       <p class="tenue piccolo" style="margin:4px 0">Nel ${P.anno - 1}: ${prima.length ? prima.map((id) => esc(PER_ID[id].nome.toLowerCase())).join(", ") : "niente di segnato"}.
         ${fisse.length ? `Restano: ${[...new Set(fisse.map((f) => PER_ID[f.ortaggioId].nome.toLowerCase()))].map(esc).join(", ")}.` : ""}</p>
       ${haGriglia(a) && (qui.length || fisse.length) ? htmlMiniScacchiera(a, qui, ctx) : ""}
@@ -822,6 +885,13 @@ function accettaPiano() {
       testo: `Dal piano ${P.anno}, prima di ${[...new Set(presto.map((v) => PER_ID[v.ortaggioId].nome.toLowerCase()))].join(", ")}: ${dosi}${a.larghezza ? "" : " (dose per un'aiuola media: metti le misure per averla giusta)"}.` });
   }
   const anno = P.anno;
+  for (const a of aiuoleVere()) {
+    if (P.serre?.[a.id] == null) continue;
+    a.serraAnni ??= {};
+    a.serraAnni[String(anno - 1)] ??= serraNel(a, anno - 1); // la storia resta giusta
+    a.serraAnni[String(anno)] = !!P.serre[a.id];
+  }
+  allineaSerre(S.aiuole);
   S.piano = null;
   annoDiario = String(anno);
   salva();
@@ -839,6 +909,12 @@ function annullaPiano() {
   S.impianti = S.impianti.filter((i) => !via.has(i.id));
   for (const i of S.impianti) if (i.piano === anno) delete i.piano; // quelle già iniziate escono dal piano
   S.eventi = S.eventi.filter((e) => !ev.includes(e));
+  // Le serre tornano dove erano l'anno prima.
+  for (const a of S.aiuole) {
+    if (a.serraAnni?.[String(anno)] == null) continue;
+    delete a.serraAnni[String(anno)];
+    if (anno === oggi().getFullYear()) a.copertura = serraNel(a, anno - 1) ? "serra" : "";
+  }
   salva_e_ridisegna();
 }
 
@@ -878,6 +954,10 @@ function collegaPiano(root) {
     salva_e_ridisegna();
   });
   su("[data-piano-modifica]", (b) => modificaProposta(b.dataset.pianoModifica));
+  root.querySelectorAll("[data-piano-serra]").forEach((c) => c.addEventListener("change", () => {
+    (S.piano.serre ??= {})[c.dataset.pianoSerra] = c.checked;
+    salva_e_ridisegna();
+  }));
   su("#piano-accetta", accettaPiano);
   su("#piano-annulla", annullaPiano);
   su("#piano-chiudi", chiudiColtureFinite);

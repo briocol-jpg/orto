@@ -18,7 +18,7 @@ function leggiSessione(k) { try { return sessionStorage.getItem(k); } catch { re
 function scriviSessione(k, v) { try { sessionStorage.setItem(k, v); } catch { /* niente */ } }
 
 // --- Cosa ha fatto chi prova -------------------------------------------------
-function aiuoleMie() { return aiuoleOrdinate().filter((a) => !a.semenzaio && !String(a.id).startsWith("es-")); }
+function aiuoleMie() { return aiuoleOrdinate().filter((a) => coltivabile(a) && !String(a.id).startsWith("es-")); }
 function esempioPresente() { return S.aiuole.some((a) => String(a.id).startsWith("es-")); }
 function aiuolaMia() { return aiuoleMie()[0] || null; }
 function serraMia() { return aiuoleMie().find((a) => a.copertura === "serra") || aiuoleMie()[1] || null; }
