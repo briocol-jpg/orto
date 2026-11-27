@@ -150,7 +150,7 @@ let S = carica();
 
 function salva() {
   allineaParti(S.aiuole);
-  adottaScacchiere();
+  timbraScacchiere();
   try {
     localStorage.setItem(CHIAVE, JSON.stringify(S));
   } catch (e) {
@@ -595,19 +595,25 @@ function celleSuAiuola(i, a = aiuola(i.aiuolaId)) {
   const go = grigliaDi(i, a);
   return celleValide(a, stessaGriglia(go, grigliaAiuola(a)) ? i.celle : riportaCelle(i.celle, go, grigliaAiuola(a)));
 }
-// Prima di cambiare la scacchiera di un'aiuola: le colture finite tengono la
-// loro (i.griglia), quelle in corso si riportano sulla nuova.
-function cambiaScacchiera(a, nuova) {
-  const g = grigliaAiuola(a), n = grigliaAiuola(nuova);
-  if (stessaGriglia(g, n)) return;
+// La scacchiera è della coltura (i.griglia, con i.grigliaManca = caselle che
+// non esistono): quella dell'aiuola è solo la proposta per le colture nuove.
+// Le colture che non ce l'hanno ancora prendono quella dell'aiuola.
+function timbraScacchiere() {
   for (const i of S.impianti) {
-    if (i.aiuolaId !== a.id || !i.celle?.length) continue;
-    if (!i.finito && i.griglia && i.data > aISO(oggi()) && !stessaGriglia(i.griglia, n)) continue; // in programma con la sua scacchiera
-    if (!i.finito) { i.celle = riportaCelle(i.celle, grigliaDi(i, a), n); delete i.griglia; delete i.grigliaManca; continue; }
-    if (i.griglia) { if (stessaGriglia(i.griglia, n)) { delete i.griglia; delete i.grigliaManca; } continue; }
-    i.griglia = { righe: g.righe, colonne: g.colonne };
+    if (i.griglia || !i.celle?.length) continue;
+    const a = aiuola(i.aiuolaId);
+    if (!a || !haGriglia(a)) continue;
+    i.griglia = grigliaAiuola(a);
     if (a.celleMancanti?.length) i.grigliaManca = [...a.celleMancanti];
   }
+}
+// Prima di cambiare la scacchiera di un'aiuola: le colture tengono la loro.
+function cambiaScacchiera() { timbraScacchiere(); }
+// Misure dell'aiuola in un anno: le misure cambiate tengono quelle di prima
+// negli anni passati (a.misurePrima = [{ fino: "2026", larghezza, lunghezza }]).
+function misureAnno(a, anno) {
+  const m = (a.misurePrima || []).filter((x) => x.fino >= anno).sort((x, y) => x.fino.localeCompare(y.fino))[0];
+  return m ? { larghezza: m.larghezza, lunghezza: m.lunghezza } : { larghezza: a.larghezza, lunghezza: a.lunghezza };
 }
 // Caselle di una coltura riportate sulla scacchiera g.
 function celleSu(i, g, a = aiuola(i.aiuolaId)) {
@@ -617,27 +623,6 @@ function celleSu(i, g, a = aiuola(i.aiuolaId)) {
 }
 // Si può dare una scacchiera propria a una coltura (passata o in programma)?
 function puoScacchiera(a) { return Boolean(a && !a.semenzaio && !a.vaso && !a.capanno && !partiDi(a).length); }
-// Coltura in programma con una scacchiera sua (es. 2027 con file diverse dal
-// 2026): quando parte, e nell'aiuola non resta niente sulla scacchiera vecchia,
-// la sua diventa la scacchiera dell'aiuola (le colture finite tengono la loro).
-// Anche se l'aiuola è vuota e la prossima coltura ha una scacchiera sua.
-function adottaScacchiere() {
-  const oggiISO = aISO(oggi());
-  for (const a of S.aiuole) {
-    if (!puoScacchiera(a)) continue;
-    const attive = impiantiAttivi(a.id).filter((i) => i.celle?.length);
-    let qui = attive.filter((i) => i.data <= oggiISO);
-    if (!qui.length) qui = attive.sort((x, y) => x.data.localeCompare(y.data)).slice(0, 1);
-    const g = qui[0]?.griglia;
-    if (!g || stessaGriglia(g, grigliaAiuola(a)) || !qui.every((i) => i.griglia && stessaGriglia(i.griglia, g))) continue;
-    const manca = qui[0].grigliaManca || [];
-    // Le altre in programma senza scacchiera propria erano pensate su quella di oggi: la tengono.
-    for (const i of attive) if (!qui.includes(i) && !i.griglia) { i.griglia = grigliaAiuola(a); if (a.celleMancanti?.length) i.grigliaManca = [...a.celleMancanti]; }
-    cambiaScacchiera(a, g);
-    a.righe = g.righe; a.colonne = g.colonne; a.celleMancanti = [...manca];
-    for (const i of S.impianti) if (i.aiuolaId === a.id && i.griglia && stessaGriglia(i.griglia, g) && !i.finito) { delete i.griglia; delete i.grigliaManca; }
-  }
-}
 // Scacchiera piccola di sola lettura: celleIcone = { a1: "🍅", … }.
 function htmlScacchieraComEra(g, manca, celleIcone) {
   let h = `<div class="scorri-scacchiera">${intestazioneGriglia(g).replace('class="scacchiera', 'class="scacchiera mini')}`;
@@ -690,7 +675,10 @@ function moduloCelleMancanti(a) {
     f.querySelector("#manca-salva").addEventListener("click", () => {
       a.celleMancanti = ordinaCelle([...via]);
       if (via.size >= g.righe * g.colonne) a.celleMancanti = [];
-      for (const i of S.impianti) if (i.aiuolaId === a.id && i.celle?.length && !i.finito && !i.griglia) i.celle = celleValide(a, i.celle);
+      // Le colture in corso con la stessa scacchiera dell'aiuola: anche per loro quelle caselle non ci sono.
+      for (const i of S.impianti) if (i.aiuolaId === a.id && i.celle?.length && !i.finito && stessaGriglia(grigliaDi(i, a), g)) {
+        i.grigliaManca = [...a.celleMancanti]; i.celle = i.celle.filter((x) => !via.has(x));
+      }
       salva_e_ridisegna();
       chiudiFinestra();
     });
@@ -737,11 +725,12 @@ function confinanti(c1, c2) {
   });
 }
 // Chi occupa ogni casella dell'aiuola (colture in corso).
-function occupazione(aiuolaId, escludiId) {
-  const mappa = {};
+// g: scacchiera su cui riportarle (quella della coltura che stai scegliendo).
+function occupazione(aiuolaId, escludiId, g) {
+  const mappa = {}, a = aiuola(aiuolaId);
   for (const i of impiantiAttivi(aiuolaId)) {
     if (i.id === escludiId) continue;
-    for (const c of celleSuAiuola(i)) (mappa[c] ??= []).push(i);
+    for (const c of g ? celleSu(i, g, a) : celleSuAiuola(i, a)) (mappa[c] ??= []).push(i);
   }
   return mappa;
 }
@@ -751,40 +740,38 @@ function occupazione(aiuolaId, escludiId) {
 // prima di quel giorno) che non saranno ancora finite (fineImpianto, in piano.js).
 // g: scacchiera su cui riportarle (quella propria della coltura che stai scegliendo).
 function occupazioneAl(aiuolaId, dataISO, escludiId, g) {
-  const a = aiuola(aiuolaId), gg = g || grigliaAiuola(a);
-  if (!g && (!dataISO || dataISO <= aISO(oggi()))) return occupazione(aiuolaId, escludiId);
-  const d = daISO(dataISO || aISO(oggi())), mappa = {};
+  if (!dataISO || dataISO <= aISO(oggi())) return occupazione(aiuolaId, escludiId, g);
+  const a = aiuola(aiuolaId), d = daISO(dataISO), mappa = {};
   for (const i of impiantiAttivi(aiuolaId)) {
-    if (i.id === escludiId || i.data > (dataISO || aISO(oggi())) || fineImpianto(i) < d) continue;
-    for (const c of celleValide({ ...a, ...gg, celleMancanti: g ? [] : a.celleMancanti }, celleSu(i, gg, a))) (mappa[c] ??= []).push(i);
+    if (i.id === escludiId || i.data > dataISO || fineImpianto(i) < d) continue;
+    for (const c of g ? celleSu(i, g, a) : celleSuAiuola(i, a)) (mappa[c] ??= []).push(i);
   }
   return mappa;
 }
-function aggiornaSceltaCelle(form, aiuolaId, escludiId, gForza, mancaForza) {
+function aggiornaSceltaCelle(form, aiuolaId, escludiId, gForza, mancaForza, passata) {
   const contenitore = form.querySelector("#w_celle");
   const a = aiuola(aiuolaId);
-  if (!haGriglia(a) && !(gForza && gForza.righe * gForza.colonne > 1)) {
+  if (gForza ? gForza.righe * gForza.colonne <= 1 : !haGriglia(a)) {
     contenitore.hidden = true;
     form.elements.celle.value = "";
     return "";
   }
   contenitore.hidden = false;
-  // gForza: la scacchiera che l'aiuola aveva allora (coltura passata), senza chi c'è adesso.
+  // gForza: la scacchiera della coltura; passata = coltura finita (senza chi c'è adesso).
   const g = gForza || grigliaAiuola(a);
   const manca = gForza ? new Set(mancaForza || []) : celleMancanti(a);
   const dentro = (x) => { const q = cellaRC(x); return q.r >= 0 && q.r < g.righe && q.c >= 0 && q.c < g.colonne && !manca.has(x); };
   const scelte = new Set(form.elements.celle.value.split(",").filter(Boolean).filter(dentro));
   form.elements.celle.value = [...scelte].join(",");
   const dataISO = form.elements.data?.value || "";
-  // Coltura in programma con una scacchiera sua: chi ci sarà, riportato su quella.
-  const futura = gForza && dataISO > aISO(oggi());
-  const occ = futura ? occupazioneAl(aiuolaId, dataISO, escludiId, gForza) : gForza ? {} : occupazioneAl(aiuolaId, dataISO, escludiId);
-  const adesso = futura ? occupazioneAl(aiuolaId, aISO(oggi()), escludiId, gForza) : gForza ? {} : occupazione(aiuolaId, escludiId);
+  // Chi c'è (o ci sarà quel giorno), riportato sulla scacchiera della coltura.
+  const occ = passata ? {} : occupazioneAl(aiuolaId, dataISO, escludiId, gForza);
+  const adesso = passata ? {} : occupazione(aiuolaId, escludiId, gForza);
   const rett = form.dataset.rettangolo === "1", angolo = form.dataset.angolo || "";
   let h = `<div class="comandi-celle">
     <div class="campo-check"><input type="checkbox" id="m_rett" ${rett ? "checked" : ""}><label for="m_rett" style="margin:0">Rettangolo: tocca due angoli</label></div>
     <button type="button" class="piccolo" data-celle-nessuna>Nessuna casella</button></div>
-    <p class="tenue piccolo" style="margin:2px 0">${scelte.size ? `Scelte: <b>${esc(testoListaCelle([...scelte]))}</b>` : "Nessuna casella scelta: la coltura occupa tutta l'aiuola."}${angolo ? ` · Primo angolo: <b>${angolo}</b>, ora tocca l'angolo opposto.` : ""}${!gForza && misuraCasella(a) ? ` · ${misuraCasella(a)}` : ""}</p>
+    <p class="tenue piccolo" style="margin:2px 0">${scelte.size ? `Scelte: <b>${esc(testoListaCelle([...scelte]))}</b>` : "Nessuna casella scelta: la coltura occupa tutta l'aiuola."}${angolo ? ` · Primo angolo: <b>${angolo}</b>, ora tocca l'angolo opposto.` : ""}${misuraCasella({ ...a, ...misureAnno(a, (dataISO || aISO(oggi())).slice(0, 4)), ...g }) ? ` · ${misuraCasella({ ...a, ...misureAnno(a, (dataISO || aISO(oggi())).slice(0, 4)), ...g })}` : ""}</p>
     <div class="scorri-scacchiera">${intestazioneGriglia(g)}`;
   for (let r = 0; r < g.righe; r++) {
     h += `<span class="intest riga">${nomeRiga(r)}</span>`;
@@ -1043,16 +1030,19 @@ function moduloAiuola(a) {
       { id: "nome", etichetta: "Nome (facoltativo, es. Lungo il muro)", valore: a?.nome },
       { id: "larghezza", etichetta: "Larghezza in metri (da sinistra a destra)", tipo: "number", passo: "0.05", valore: a?.larghezza },
       { id: "lunghezza", etichetta: "Lunghezza in metri (dal fondo verso di te)", tipo: "number", passo: "0.05", valore: a?.lunghezza },
+      { id: "misureDal", etichetta: "Le misure nuove valgono", tipo: "select", nascosto: true, valore: String(oggi().getFullYear() + 1),
+        opzioni: [[String(oggi().getFullYear() + 1), `dal ${oggi().getFullYear() + 1} (negli anni prima l'aiuola resta com'era)`],
+          [String(oggi().getFullYear()), `da quest'anno, ${oggi().getFullYear()} (prima restava com'era)`], ["", "da sempre: correggo un errore"]] },
       { id: "fila", etichetta: "In quale fila sta", tipo: "select", opzioni: OPZIONI_FILA, valore: String(filaAiuola(a || {})) },
       { id: "inizio", etichetta: "Distanza dal bordo sinistro dell'orto, in metri (facoltativo)", tipo: "number", passo: "0.05", valore: a?.inizio },
       { id: "copertura", etichetta: "All'aperto o in serra", tipo: "select", opzioni: Object.entries(COPERTURE), valore: a?.copertura ?? "" },
       { id: "giroSerra", etichetta: "🔁 Serra spostabile: questa aiuola è uno dei posti dove sposti le serre da un anno all'altro (anche se adesso è all'aperto)", tipo: "check", valore: !!a?.giroSerra },
       { id: "porta", etichetta: "🚪 Porta (serra o capanno): da che lato si entra", tipo: "select", opzioni: Object.entries(PORTE), valore: a?.porta ?? "" },
-      { id: "pacciamatura", etichetta: "Pacciamatura", tipo: "select", opzioni: Object.entries(PACCIAMATURE), valore: a?.pacciamatura ?? "" },
+      { id: "pacciamatura", etichetta: "Pacciamatura proposta per le colture nuove (ogni coltura poi può avere la sua)", tipo: "select", opzioni: Object.entries(PACCIAMATURE), valore: a?.pacciamatura ?? "" },
       { id: "fissa", etichetta: "Sempre lo stesso ortaggio, ogni anno (non si ruota: es. zucca che sale sul tetto)", tipo: "select",
         opzioni: [["", "— no, si ruota —"], ...elencoOrtaggi().map((o) => [o.id, `${o.emoji} ${o.nome}`])], valore: a?.fissa ?? "" },
-      { id: "righe", etichetta: "Scacchiera: righe a, b, c… (dal fondo verso di te)", tipo: "number", passo: "1", valore: grigliaAiuola(a).righe },
-      { id: "colonne", etichetta: "Scacchiera: colonne 1, 2, 3… (da sinistra a destra)", tipo: "number", passo: "1", valore: grigliaAiuola(a).colonne },
+      { id: "righe", etichetta: "Scacchiera proposta per le colture nuove: righe a, b, c… (dal fondo verso di te; ogni coltura poi può avere la sua)", tipo: "number", passo: "1", valore: grigliaAiuola(a).righe },
+      { id: "colonne", etichetta: "… e colonne 1, 2, 3… (da sinistra a destra)", tipo: "number", passo: "1", valore: grigliaAiuola(a).colonne },
       { id: "caselleVasi", etichetta: "🏺 Le caselle sono vasi? (sulla mappa ogni casella diventa un vaso e ogni fila è centrata, come i vasi a piramide)", tipo: "select",
         opzioni: [["", "No, è terra"], ["tondo", "Sì, vasi tondi"], ["quadrato", "Sì, vasi quadrati"], ["rettangolare", "Sì, vasi rettangolari"]], valore: formaVasiCaselle(a) },
       { id: "vasoL", etichetta: "Misure di ogni vaso: larghezza in metri (da sinistra a destra; facoltativa)", tipo: "number", passo: "0.01", valore: a?.vasoL },
@@ -1081,6 +1071,9 @@ function moduloAiuola(a) {
         : v.caselleVasi === "quadrato" ? "Lato di ogni vaso in metri (facoltativo)" : "Misure di ogni vaso: larghezza in metri (da sinistra a destra; facoltativa)";
       form.querySelector("#w_fissa").hidden = capanno;
       campiMisureVaso(form, v.cosa, false);
+      // Misure cambiate: da quando valgono (gli anni prima si disegnano con quelle vecchie).
+      form.querySelector("#w_misureDal").hidden = !(a?.larghezza && a?.lunghezza && !capanno
+        && (numeroMisura(v.larghezza) !== a.larghezza || numeroMisura(v.lunghezza) !== a.lunghezza));
       if (partiDi(a).length) for (const id of ["cosa", "righe", "colonne", "caselleVasi", "vasoL", "vasoP", "fissa", "pacciamatura"]) form.querySelector(`#w_${id}`).hidden = true;
       const wp = form.querySelector("#w_porta");
       if (wp) wp.hidden = !(capanno || v.copertura === "serra" || v.giroSerra);
@@ -1107,6 +1100,11 @@ function moduloAiuola(a) {
       if (doppia && v.faiPosto) for (const [x, nuovo] of spostamentiAiuole(v.zona, dati.numero, a)) x.numero = nuovo;
       if (a) {
         cambiaScacchiera(a, dati);
+        // Misure cambiate da un anno in poi: quelle vecchie restano per gli anni prima.
+        if (v.misureDal && a.larghezza && a.lunghezza && (dati.larghezza !== a.larghezza || dati.lunghezza !== a.lunghezza)) {
+          const fino = String(Number(v.misureDal) - 1);
+          a.misurePrima = [...(a.misurePrima || []).filter((m) => m.fino < fino), { fino, larghezza: a.larghezza, lunghezza: a.lunghezza }];
+        }
         Object.assign(a, dati);
         delete a.misure;
         // Cambiata a mano la serra di quest'anno: vale anche per la posizione decisa dal piano.
@@ -1183,7 +1181,7 @@ function moduloDividi(a) {
       for (const i of attivi) {
         const k = LETTERE_PARTI.indexOf(v[`imp_${i.id}`]), b = parti[k], [s0, s1] = tratti[k], gB = grigliaAiuola(b);
         const celle = [];
-        for (const nome of celleValide(a, i.celle || [])) {
+        for (const nome of celleSuAiuola(i, a)) {
           const { r, c } = cellaRC(nome);
           const fx = (c + 0.5) / gP.colonne, fy = (r + 0.5) / gP.righe, f = fondo ? fy : fx;
           if (f < s0 || f >= s1) continue;
@@ -1193,6 +1191,7 @@ function moduloDividi(a) {
         i.aiuolaId = b.id;
         // Da sola nella parte: tutte le caselle; con altre: le caselle riportate.
         i.celle = !haGriglia(b) ? [] : quante[b.parte] > 1 && celle.length ? ordinaCelle([...new Set(celle)]) : tutteLeCelle(b);
+        delete i.griglia; delete i.grigliaManca; // prende quella della parte (timbraScacchiere)
       }
       a.divisa = v.divisa;
       S.aiuole.push(...parti);
@@ -1404,7 +1403,7 @@ function primaDataUtile(ortaggioId, modo, aiuolaId, protezione) {
 }
 function fmtAnno(d) { return d.getFullYear() === oggi().getFullYear() ? fmt(d) : `${fmt(d)} ${d.getFullYear()}`; }
 
-function moduloImpianto({ aiuolaId, ortaggioId, impianto, celle } = {}) {
+function moduloImpianto({ aiuolaId, ortaggioId, impianto, celle, griglia } = {}) {
   const i = impianto;
   if (i?.modo === "acq") { moduloAcquisto(i); return; }
   let ultimoOrtaggio = i?.ortaggioId ?? ortaggioId ?? "";
@@ -1413,21 +1412,24 @@ function moduloImpianto({ aiuolaId, ortaggioId, impianto, celle } = {}) {
   let ultimaAiuola = aiuolaIniziale;
   // Coltura nuova: la data proposta segue ortaggio, modo e aiuola finché non la cambi tu.
   let dataProposta = i ? null : aISO(oggi()), ultimaChiave = "";
-  // Coltura finita: si può dire che scacchiera aveva l'aiuola allora (se poi è
-  // cambiata), e le caselle si scelgono su quella. Coltura in programma: può
-  // avere una scacchiera sua (es. file diverse il prossimo anno) senza toccare
-  // quella delle colture in corso; quando parte diventa quella dell'aiuola.
+  // Scacchiera e pacciamatura sono della coltura: per una coltura nuova si
+  // propongono quelle dell'aiuola, poi si cambiano qui senza toccare le altre.
   const aiuolaG = aiuola(aiuolaIniziale);
-  const gAllora = i ? grigliaDi(i) : grigliaAiuola(aiuolaG);
+  // griglia "4x1": la scacchiera su cui hai toccato la casella (quella della coltura di adesso).
+  const gAllora = i ? grigliaDi(i) : griglia ? grigliaAiuola({ righe: griglia.split("x")[0], colonne: griglia.split("x")[1] }) : grigliaAiuola(aiuolaG);
   let aiuolaGriglia = aiuolaIniziale;
+  // Caselle che non esistono sulla scacchiera g (vasi a piramide…).
+  const mancaPer = (aiuolaId, g) => i?.griglia && i.aiuolaId === aiuolaId && stessaGriglia(i.griglia, g) ? i.grigliaManca || []
+    : stessaGriglia(g, grigliaAiuola(aiuola(aiuolaId))) ? aiuola(aiuolaId)?.celleMancanti || [] : [];
   modulo({
     titolo: i ? "Modifica coltura" : "Nuova coltura",
     campi: [
       { id: "ortaggioId", etichetta: "Ortaggio", tipo: "select", opzioni: opzioniOrtaggi(), valore: i?.ortaggioId ?? ortaggioId ?? "", richiesto: true },
       { id: "aiuolaId", etichetta: "Dove (aiuola)", tipo: "select", opzioni: [...opzioniAiuole(), [NUOVA_AIUOLA, "＋ Nuova aiuola…"]], valore: aiuolaIniziale, richiesto: true, mappa: !i },
       ...campiNuovaAiuola(),
-      { id: "grigliaRighe", etichetta: "Scacchiera che aveva l'aiuola allora: righe (dal fondo verso di te)", tipo: "number", passo: "1", valore: gAllora.righe, nascosto: true },
-      { id: "grigliaColonne", etichetta: "… e colonne (da sinistra a destra)", tipo: "number", passo: "1", valore: gAllora.colonne, nascosto: true },
+      { id: "pacciamatura", etichetta: "Pacciamatura di questa coltura", tipo: "select", opzioni: Object.entries(PACCIAMATURE), valore: i ? i.pacciamatura ?? aiuolaG?.pacciamatura ?? "" : aiuolaG?.pacciamatura ?? "", nascosto: true },
+      { id: "grigliaRighe", etichetta: "Scacchiera di questa coltura: righe a, b, c… (dal fondo verso di te)", tipo: "number", passo: "1", valore: gAllora.righe, nascosto: true },
+      { id: "grigliaColonne", etichetta: "… e colonne 1, 2, 3… (da sinistra a destra; una coltura per fila: 1 riga e tante colonne quante file)", tipo: "number", passo: "1", valore: gAllora.colonne, nascosto: true },
       campoCelle(i?.celle ?? celle),
       { id: "modo", etichetta: "Come", tipo: "select", opzioni: Object.entries(MODI).filter(([k]) => k !== "acq"), valore: i?.modo ?? modoPredefinito(ultimoOrtaggio, aiuolaIniziale) },
       { id: "protezione", etichetta: "Protezione all'inizio", tipo: "select", opzioni: Object.entries(PROTEZIONI), valore: i?.protezione ?? "" },
@@ -1466,25 +1468,20 @@ function moduloImpianto({ aiuolaId, ortaggioId, impianto, celle } = {}) {
         proposta = `<div class="avviso">📅 Per ${esc(PER_ID[v.ortaggioId].nome.toLowerCase())} il calendario non prevede ${esc(MODI[modoOra].toLowerCase())}: prova un altro "Come".</div>`;
       }
       const v2 = { ...v, data: form.elements.data.value };
-      // Cambiata aiuola: la scacchiera proposta è la sua.
+      // Cambiata aiuola: scacchiera e pacciamatura proposte sono le sue.
       if (v2.aiuolaId !== aiuolaGriglia) {
         aiuolaGriglia = v2.aiuolaId;
         const gn = i && v2.aiuolaId === i.aiuolaId ? grigliaDi(i) : grigliaAiuola(aiuola(v2.aiuolaId));
         form.elements.grigliaRighe.value = v.grigliaRighe = gn.righe; form.elements.grigliaColonne.value = v.grigliaColonne = gn.colonne;
+        if (!(i && v2.aiuolaId === i.aiuolaId)) form.elements.pacciamatura.value = aiuola(v2.aiuolaId)?.pacciamatura || "";
       }
-      const futura = !v.finito && v2.data > aISO(oggi());
-      const propria = !v.finito && i?.griglia && v2.aiuolaId === i.aiuolaId; // partita, con la sua scacchiera, mentre l'aiuola ha ancora la vecchia
-      const conG = puoScacchiera(aiuola(v2.aiuolaId)) && (v.finito || futura || propria);
-      for (const id of ["grigliaRighe", "grigliaColonne"]) form.querySelector(`#w_${id}`).hidden = !conG;
-      form.querySelector("label[for=m_grigliaRighe]").textContent = !v.finito
-        ? "Scacchiera per questa coltura: righe (cambiala qui se l'anno prossimo farai file diverse; le colture di adesso restano com'erano)"
-        : "Scacchiera che aveva l'aiuola allora: righe (dal fondo verso di te)";
+      const conG = puoScacchiera(aiuola(v2.aiuolaId));
+      for (const id of ["grigliaRighe", "grigliaColonne", "pacciamatura"]) form.querySelector(`#w_${id}`).hidden = !conG;
       const gScelta = conG ? grigliaAiuola({ righe: v.grigliaRighe, colonne: v.grigliaColonne }) : null;
-      const gOggi = grigliaAiuola(aiuola(v2.aiuolaId));
-      const diversa = gScelta && !stessaGriglia(gScelta, gOggi);
-      const avvisoCelle = aggiornaSceltaCelle(form, v2.aiuolaId, i?.id, diversa ? gScelta : null, diversa && i?.griglia && stessaGriglia(i.griglia, gScelta) ? i.grigliaManca : null)
-        + (diversa ? `<div class="bene piccolo">▦ Le caselle sono sulla scacchiera ${futura ? "di questa coltura" : "di allora"} (${gScelta.righe} × ${gScelta.colonne}); oggi l'aiuola ha ${gOggi.righe} × ${gOggi.colonne}${futura ? ": le colture di adesso restano così, e quando questa parte (e le altre sono finite) l'aiuola passa alla scacchiera nuova" : ""}.</div>` : "");
-      const celleScelte = diversa ? [] : form.elements.celle.value.split(",").filter(Boolean);
+      const avvisoCelle = aggiornaSceltaCelle(form, v2.aiuolaId, i?.id, gScelta, gScelta ? mancaPer(v2.aiuolaId, gScelta) : null, v.finito);
+      // Avvisi sui vicini: caselle riportate sulla scacchiera dell'aiuola.
+      const scelte = form.elements.celle.value.split(",").filter(Boolean);
+      const celleScelte = gScelta && scelte.length ? celleSu({ celle: scelte, griglia: gScelta, aiuolaId: v2.aiuolaId }, grigliaAiuola(aiuola(v2.aiuolaId))) : scelte;
       return aggiornaNuovaAiuola(v2, form) + avvisoCelle + proposta + htmlAvvisi(v2.aiuolaId, v2.ortaggioId, v2.data, i?.id, celleScelte, protezione)
         + (CONSIGLI_PROTEZIONE[protezione] ? `<div class="bene piccolo">${CONSIGLI_PROTEZIONE[protezione]}</div>` : "")
         + (v2.ortaggioId && !v.finito && !aiuola(v2.aiuolaId)?.semenzaio && testoIntercalari(v2.ortaggioId, v2.data) ? `<div class="bene piccolo">${testoIntercalari(v2.ortaggioId, v2.data)}</div>` : "");
@@ -1492,15 +1489,15 @@ function moduloImpianto({ aiuolaId, ortaggioId, impianto, celle } = {}) {
     salva: (v) => {
       v.aiuolaId = aiuolaDaModulo(v);
       togliCampiNuovaAiuola(v);
-      const conG = puoScacchiera(aiuola(v.aiuolaId)) && (v.finito || v.data > aISO(oggi()) || (i?.griglia && v.aiuolaId === i.aiuolaId));
+      const conG = puoScacchiera(aiuola(v.aiuolaId));
       const gScelta = conG ? grigliaAiuola({ righe: v.grigliaRighe, colonne: v.grigliaColonne }) : null;
       delete v.grigliaRighe; delete v.grigliaColonne;
-      if (gScelta && !stessaGriglia(gScelta, grigliaAiuola(aiuola(v.aiuolaId)))) {
-        const stessa = i?.griglia && i.aiuolaId === v.aiuolaId && stessaGriglia(i.griglia, gScelta);
-        const manca = new Set(stessa ? i.grigliaManca || [] : []);
-        v.celle = ordinaCelle(v.celle.split(",").filter(Boolean).filter((x) => { const q = cellaRC(x); return q.r >= 0 && q.r < gScelta.righe && q.c >= 0 && q.c < gScelta.colonne && !manca.has(x); }));
+      if (!conG) delete v.pacciamatura;
+      if (gScelta) {
+        const manca = mancaPer(v.aiuolaId, gScelta), via = new Set(manca);
+        v.celle = ordinaCelle(v.celle.split(",").filter(Boolean).filter((x) => { const q = cellaRC(x); return q.r >= 0 && q.r < gScelta.righe && q.c >= 0 && q.c < gScelta.colonne && !via.has(x); }));
         v.griglia = { righe: gScelta.righe, colonne: gScelta.colonne };
-        if (i && !stessa) delete i.grigliaManca;
+        v.grigliaManca = manca.length ? [...manca] : undefined;
       } else {
         v.celle = celleValide(aiuola(v.aiuolaId), v.celle.split(",").filter(Boolean));
         if (i) { delete i.griglia; delete i.grigliaManca; }
@@ -1738,8 +1735,11 @@ function consiglioAiuolaVuota(a) {
   const fatta = ultimaConcimazione(a);
 
   const passi = [];
-  if (a.pacciamatura === "telo") passi.push("Togli o arrotola il <b>telo di pacciamatura</b>: così puoi concimare e lavorare la terra. Rimettilo prima di piantare, tiene a bada le erbacce.");
-  if (a.pacciamatura === "organica") passi.push("Sposta ai lati <b>paglia o foglie</b> (se sono già ben decomposte puoi interrarle).");
+  // Pacciamatura: quella dell'ultima coltura (se l'avevi scritta), altrimenti quella dell'aiuola.
+  const ultima = S.impianti.filter((i) => i.aiuolaId === a.id && i.finito).sort((x, y) => (y.dataFine || y.data).localeCompare(x.dataFine || x.data))[0];
+  const pac = ultima?.pacciamatura ?? a.pacciamatura;
+  if (pac === "telo") passi.push("Togli o arrotola il <b>telo di pacciamatura</b>: così puoi concimare e lavorare la terra. Rimettilo prima di piantare, tiene a bada le erbacce.");
+  if (pac === "organica") passi.push("Sposta ai lati <b>paglia o foglie</b> (se sono già ben decomposte puoi interrarle).");
   if (fatta) {
     passi.push(`Concimata il ${fmt(daISO(fatta.data))}${fatta.testo ? ` (${esc(fatta.testo)})` : ""}: per ora basta così.`);
   } else {
@@ -2370,7 +2370,7 @@ function vistaOrto(idAiuola) {
       </select>
     </div>
     ${bottoni}
-    ${annoPianta ? `<p class="tenue piccolo">🗓️ Le colture del <b>${annoPianta}</b>${annoPianta > String(oggi().getFullYear()) ? " (in programma: aggiungile con ＋ Nuova coltura con una data futura, o accetta il piano della stagione nuova)" : ""}. Le aiuole che hanno cambiato scacchiera si vedono com'erano quell'anno.</p>` : ""}
+    ${annoPianta ? `<p class="tenue piccolo">🗓️ Le colture del <b>${annoPianta}</b>${annoPianta > String(oggi().getFullYear()) ? " (in programma: aggiungile con ＋ Nuova coltura con una data futura, o accetta il piano della stagione nuova)" : ""}. Ogni aiuola con le misure di quell'anno e con scacchiera e pacciamatura della sua coltura.</p>` : ""}
     ${htmlPianta(scelta)}
     ${S.aiuole.length <= 1 && !IN_PROVA ? htmlInvitoProva() : ""}
     ${S.aiuole.length <= 1 ? `<p class="tenue">Crea un'aiuola per ogni pezzo dell'orto: l'app ricorda cosa ci hai coltivato ogni anno e ti avvisa se ripeti la stessa famiglia (rotazione) o metti vicini ortaggi che non vanno d'accordo.</p>` : ""}
@@ -2400,13 +2400,19 @@ function htmlPianta(soloZona, perScelta = false) {
   const fineCol = (i) => i.finito ? daISO(i.dataFine || i.data) : fineImpianto(i);
   const da = (i) => { const d = daISO(i.data); return d < ia ? ia : d; }, a_ = (i) => { const f = fineCol(i); return f > fa ? fa : f; };
   const durata = (i) => a_(i) - da(i);
+  // Coltura principale: quella che dà scacchiera e pacciamatura al disegno.
+  // In un anno quella rimasta più a lungo; adesso l'ultima messa; nei moduli nessuna (vale l'aiuola).
+  const principale = (a) => {
+    if (perScelta) return null;
+    const l = coltureDi(a.id).filter((i) => i.celle?.length || i.pacciamatura != null);
+    return (anno ? l.sort((x, y) => durata(y) - durata(x)) : l.sort((x, y) => y.data.localeCompare(x.data)))[0] || null;
+  };
   const grigliaVista = (a) => {
-    const v = anno && coltureDi(a.id).filter((i) => i.celle?.length).sort((x, y) => durata(y) - durata(x))[0];
+    const v = principale(a);
     return v?.griglia ? { g: v.griglia, manca: new Set(v.grigliaManca || []) } : { g: grigliaAiuola(a), manca: celleMancanti(a) };
   };
   const occupazioneDi = (a) => {
-    if (!anno && perScelta) return occupazione(a.id);
-    if (!anno) { const m = {}; for (const i of inCorso(a.id)) for (const c of celleSuAiuola(i, a)) (m[c] ??= []).push(i); return m; }
+    if (perScelta) return occupazione(a.id);
     const m = {}, gv = grigliaVista(a).g;
     for (const i of coltureDi(a.id)) {
       if (!i.celle?.length) continue;
@@ -2416,14 +2422,20 @@ function htmlPianta(soloZona, perScelta = false) {
     // Colture che si sono succedute nella stessa casella (zucchine, poi aglio
     // in autunno): si vede quella rimasta più a lungo quell'anno, con quelle
     // che c'erano nello stesso periodo.
-    for (const c of Object.keys(m)) {
+    if (anno) for (const c of Object.keys(m)) {
       const l = m[c], princ = [...l].sort((x, y) => durata(y) - durata(x))[0];
       m[c] = l.filter((i) => i === princ || (da(i) <= a_(princ) && a_(i) >= da(princ)));
     }
     return m;
   };
+  // Ogni aiuola come era nell'anno: misure di quell'anno e pacciamatura della coltura principale.
+  const annoMisure = anno || String(oggi().getFullYear());
+  const comeNellAnno = (a) => {
+    const v = principale(a);
+    return { ...a, ...misureAnno(a, annoMisure), pacciamatura: v?.pacciamatura ?? a.pacciamatura };
+  };
   const blocchi = zone().filter((z) => !soloZona || z === soloZona).map((zona) => {
-    const lista = aiuoleOrdinate().filter((a) => !a.semenzaio && !a.dentro && (a.zona || ZONA_PREDEFINITA) === zona);
+    const lista = aiuoleOrdinate().filter((a) => !a.semenzaio && !a.dentro && (a.zona || ZONA_PREDEFINITA) === zona).map(comeNellAnno);
     if (!lista.length) return "";
     const misurate = lista.filter((a) => a.larghezza && a.lunghezza && !a.capanno);
     const mediaL = misurate.length ? misurate.reduce((s, a) => s + a.larghezza, 0) / misurate.length : 1;
@@ -2508,7 +2520,7 @@ function htmlPianta(soloZona, perScelta = false) {
       // in fondo le ha sopra, quella davanti sotto, quelle in mezzo dentro l'aiuola.
       // Così tra le file resta solo il vialetto vero.
       const dove = doveScritte({ f, w, h });
-      const parti = partiDi(a);
+      const parti = partiDi(a).map(comeNellAnno);
       const problemi = !anno && [a, ...parti].some((b) => (b.capanno ? [] : coltureDi(b.id)).some((i) => avvisiRotazione(b.id, i.ortaggioId, i.data, i.id, i.celle).length
         || avvisiVicini(b.id, i.ortaggioId, i.id, i.celle).cattivi.length));
       const e = fs * 1.25; // lato di un'emoji
@@ -2780,10 +2792,14 @@ function suggerimentiAiuola(a) {
 }
 
 // Scacchiera della scheda aiuola: tocca una casella vuota per piantarci, una piena per modificarla.
+// La scacchiera è quella della coltura messa per ultima (ognuna ha la sua), altrimenti quella proposta dall'aiuola.
 function htmlScacchiera(a) {
-  if (!haGriglia(a)) return "";
-  const g = grigliaAiuola(a);
-  const occ = occupazione(a.id), manca = celleMancanti(a);
+  const princ = inCorso(a.id).filter((i) => i.celle?.length && i.griglia).sort((x, y) => y.data.localeCompare(x.data))[0];
+  const g = princ ? princ.griglia : grigliaAiuola(a);
+  if (a.semenzaio || g.righe * g.colonne <= 1) return "";
+  const manca = princ ? new Set(princ.grigliaManca || []) : celleMancanti(a);
+  const occ = occupazione(a.id, null, g);
+  const diversa = !stessaGriglia(g, grigliaAiuola(a));
   const tutta = impiantiAttivi(a.id).filter((i) => !i.celle?.length);
   const fitta = grigliaFitta(g);
   let h = `<div class="scorri-scacchiera">${intestazioneGriglia(g).replace('class="scacchiera', 'class="scacchiera grande')}`;
@@ -2795,15 +2811,15 @@ function htmlScacchiera(a) {
       const chi = occ[n] || [];
       h += chi.length
         ? `<button type="button" class="cella piena" data-modifica-imp="${chi[0].id}" title="${n} · ${esc(chi.map((i) => PER_ID[i.ortaggioId]?.nome ?? "").join(", "))}"><span class="em">${chi.map((i) => icona(PER_ID[i.ortaggioId])).join("")}</span>${fitta ? "" : `<span class="nome">${esc(chi.map((i) => PER_ID[i.ortaggioId]?.nome ?? "").join(", "))}</span>`}</button>`
-        : `<button type="button" class="cella" data-cella-nuova="${n}" title="${n}"><span class="nome tenue">${n}</span></button>`;
+        : `<button type="button" class="cella" data-cella-nuova="${n}"${diversa ? ` data-griglia="${g.righe}x${g.colonne}"` : ""} title="${n}"><span class="nome tenue">${n}</span></button>`;
     }
   }
   h += `</div></div>`;
-  const misura = misuraCasella(a);
-  return `<section class="carta"><h3 style="margin-top:0">Scacchiera ${g.righe} × ${g.colonne}${manca.size ? ` <span class="tenue piccolo">· ${g.righe * g.colonne - manca.size} caselle vere</span>` : ""}${misura ? ` <span class="tenue piccolo">· ${misura}</span>` : ""}</h3>${h}
+  const misura = misuraCasella({ ...a, ...misureAnno(a, String(oggi().getFullYear())), ...g });
+  return `<section class="carta"><h3 style="margin-top:0">Scacchiera ${g.righe} × ${g.colonne}${princ ? ` <span class="tenue piccolo">· di ${esc(PER_ID[princ.ortaggioId]?.nome.split(" (")[0].toLowerCase() ?? "")}</span>` : ""}${manca.size ? ` <span class="tenue piccolo">· ${g.righe * g.colonne - manca.size} caselle vere</span>` : ""}${misura ? ` <span class="tenue piccolo">· ${misura}</span>` : ""}</h3>${h}
     <p class="tenue piccolo">Righe a, b, c… dal fondo verso di te; colonne 1, 2, 3… da sinistra a destra. Tocca una casella vuota per piantarci, una piena per modificarla.
     ${tutta.length ? `Su tutta l'aiuola: ${tutta.map((i) => nomeOrtaggio(i.ortaggioId)).join(", ")}.` : ""}</p>
-    <div class="riga-bottoni"><button type="button" class="piccolo secondario" data-celle-mancanti="${a.id}">✕ Caselle che non esistono${manca.size ? ` (${manca.size})` : ""}</button></div></section>`;
+    ${diversa ? "" : `<div class="riga-bottoni"><button type="button" class="piccolo secondario" data-celle-mancanti="${a.id}">✕ Caselle che non esistono${manca.size ? ` (${manca.size})` : ""}</button></div>`}</section>`;
 }
 
 function vistaAiuola(a) {
@@ -3537,7 +3553,7 @@ window.addEventListener("resize", () => {
 });
 
 function disegna() {
-  adottaScacchiere();
+  timbraScacchiere();
   const { vista, param } = rotta();
   const app = el("app");
   const imp = S.impostazioni;
@@ -3606,7 +3622,7 @@ function collega(root) {
     su("#coltura-qui", () => moduloImpianto({ aiuolaId: a.id }));
     su("[data-intercalare]", (b) => moduloImpianto({ aiuolaId: a.id, ortaggioId: b.dataset.intercalare, celle: S.impianti.find((x) => x.id === b.dataset.intercalareDi)?.celle }));
     su("#piantine-comprate", () => moduloAcquisto());
-    su("[data-cella-nuova]", (b) => moduloImpianto({ aiuolaId: a.id, celle: [b.dataset.cellaNuova] }));
+    su("[data-cella-nuova]", (b) => moduloImpianto({ aiuolaId: a.id, celle: [b.dataset.cellaNuova], griglia: b.dataset.griglia }));
     su("#evento-qui", () => moduloEvento({ tipo: "lavoro", aiuolaId: a.id }));
     su("#modifica-aiuola", () => padreDi(a) ? moduloParte(a, padreDi(a)) : moduloAiuola(a));
     su("#dividi", () => moduloDividi(a));
