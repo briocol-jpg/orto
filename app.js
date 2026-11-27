@@ -2333,6 +2333,36 @@ function coltureAnno(aiuolaId, anno) {
   return S.impianti.filter((i) => i.aiuolaId === aiuolaId && i.modo !== "acq" && PER_ID[i.ortaggioId]
     && (i.data.startsWith(anno) || (i.data < anno && (i.finito ? (i.dataFine || "") >= anno : fineImpianto(i) >= new Date(Number(anno), 0, 1)))));
 }
+// Selettore dell'anno (pianta dell'orto e scheda aiuola: stesso anno).
+function htmlSelettoreAnno() {
+  return `<select id="anno-pianta" style="width:auto" aria-label="Anno">
+    <option value="">Adesso (colture in corso)</option>
+    ${anniPianta().map((y) => `<option value="${y}" ${y === annoPianta ? "selected" : ""}>${y}${y === String(oggi().getFullYear()) ? " (quest'anno)" : y === String(oggi().getFullYear() + 1) ? " (prossima stagione)" : ""}</option>`).join("")}
+  </select>`;
+}
+// Come si vede un'aiuola in un anno (null = adesso, solo colture già messe):
+// la coltura principale (nell'anno quella rimasta più a lungo, adesso l'ultima
+// messa) dà scacchiera e pacciamatura; le caselle delle altre si riportano su
+// quella; se in una casella si sono succedute più colture si vede la principale
+// con quelle presenti nello stesso periodo.
+function vistaScacchiera(a, anno) {
+  const colture = anno ? coltureAnno(a.id, anno) : inCorso(a.id);
+  const ia = anno && new Date(Number(anno), 0, 1), fa = anno && new Date(Number(anno), 11, 31);
+  const fineCol = (i) => i.finito ? daISO(i.dataFine || i.data) : fineImpianto(i);
+  const da = (i) => { const d = daISO(i.data); return d < ia ? ia : d; }, a_ = (i) => { const f = fineCol(i); return f > fa ? fa : f; };
+  const durata = (i) => a_(i) - da(i);
+  const l = colture.filter((i) => i.celle?.length || i.pacciamatura != null);
+  const princ = (anno ? l.sort((x, y) => durata(y) - durata(x)) : l.sort((x, y) => y.data.localeCompare(x.data)))[0] || null;
+  const g = princ?.griglia || grigliaAiuola(a);
+  const manca = princ?.griglia ? new Set(princ.grigliaManca || []) : celleMancanti(a);
+  const occ = {};
+  for (const i of colture) for (const c of celleSu(i, g, a)) (occ[c] ??= []).push(i);
+  if (anno) for (const c of Object.keys(occ)) {
+    const lc = occ[c], p = [...lc].sort((x, y) => durata(y) - durata(x))[0];
+    occ[c] = lc.filter((i) => i === p || (da(i) <= a_(p) && a_(i) >= da(p)));
+  }
+  return { colture, princ, g, manca, occ };
+}
 function anniPianta() {
   const anni = new Set([String(oggi().getFullYear()), String(oggi().getFullYear() + 1)]);
   for (const i of S.impianti) if (!aiuola(i.aiuolaId)?.semenzaio) anni.add(i.data.slice(0, 4));
@@ -2364,10 +2394,7 @@ function vistaOrto(idAiuola) {
   return `
     <div class="riga" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <h2>${scelta ? esc(scelta) : "Le mie aiuole"}</h2>
-      <select id="anno-pianta" style="width:auto" aria-label="Anno">
-        <option value="">Adesso (colture in corso)</option>
-        ${anniPianta().map((y) => `<option value="${y}" ${y === annoPianta ? "selected" : ""}>${y}${y === String(oggi().getFullYear()) ? " (quest'anno)" : y === String(oggi().getFullYear() + 1) ? " (prossima stagione)" : ""}</option>`).join("")}
-      </select>
+      ${htmlSelettoreAnno()}
     </div>
     ${bottoni}
     ${annoPianta ? `<p class="tenue piccolo">🗓️ Le colture del <b>${annoPianta}</b>${annoPianta > String(oggi().getFullYear()) ? " (in programma: aggiungile con ＋ Nuova coltura con una data futura, o accetta il piano della stagione nuova)" : ""}. Ogni aiuola con le misure di quell'anno e con scacchiera e pacciamatura della sua coltura.</p>` : ""}
@@ -2393,41 +2420,11 @@ function htmlPianta(soloZona, perScelta = false) {
   // Adesso: solo le colture già messe (le aiuole con solo colture in programma
   // risultano libere, da concimare); nei moduli anche quelle in programma.
   const coltureDi = (id) => anno ? coltureAnno(id, anno) : perScelta ? impiantiAttivi(id) : inCorso(id);
-  // Scacchiera da disegnare: quella dell'anno scelto (se le colture di quell'anno
-  // avevano una scacchiera diversa da oggi, i.griglia), altrimenti quella di oggi.
-  // Quanto è rimasta una coltura nell'anno scelto (per scegliere la principale).
-  const ia = anno && new Date(Number(anno), 0, 1), fa = anno && new Date(Number(anno), 11, 31);
-  const fineCol = (i) => i.finito ? daISO(i.dataFine || i.data) : fineImpianto(i);
-  const da = (i) => { const d = daISO(i.data); return d < ia ? ia : d; }, a_ = (i) => { const f = fineCol(i); return f > fa ? fa : f; };
-  const durata = (i) => a_(i) - da(i);
-  // Coltura principale: quella che dà scacchiera e pacciamatura al disegno.
-  // In un anno quella rimasta più a lungo; adesso l'ultima messa; nei moduli nessuna (vale l'aiuola).
-  const principale = (a) => {
-    if (perScelta) return null;
-    const l = coltureDi(a.id).filter((i) => i.celle?.length || i.pacciamatura != null);
-    return (anno ? l.sort((x, y) => durata(y) - durata(x)) : l.sort((x, y) => y.data.localeCompare(x.data)))[0] || null;
-  };
-  const grigliaVista = (a) => {
-    const v = principale(a);
-    return v?.griglia ? { g: v.griglia, manca: new Set(v.grigliaManca || []) } : { g: grigliaAiuola(a), manca: celleMancanti(a) };
-  };
-  const occupazioneDi = (a) => {
-    if (perScelta) return occupazione(a.id);
-    const m = {}, gv = grigliaVista(a).g;
-    for (const i of coltureDi(a.id)) {
-      if (!i.celle?.length) continue;
-      const gi = grigliaDi(i, a);
-      for (const c of stessaGriglia(gi, gv) ? i.celle : riportaCelle(i.celle, gi, gv)) (m[c] ??= []).push(i);
-    }
-    // Colture che si sono succedute nella stessa casella (zucchine, poi aglio
-    // in autunno): si vede quella rimasta più a lungo quell'anno, con quelle
-    // che c'erano nello stesso periodo.
-    if (anno) for (const c of Object.keys(m)) {
-      const l = m[c], princ = [...l].sort((x, y) => durata(y) - durata(x))[0];
-      m[c] = l.filter((i) => i === princ || (da(i) <= a_(princ) && a_(i) >= da(princ)));
-    }
-    return m;
-  };
+  // Scacchiera, caselle e pacciamatura: come si vedevano nell'anno (vistaScacchiera); nei moduli quelle dell'aiuola.
+  const vista_ = (a) => vistaScacchiera(a, anno);
+  const principale = (a) => perScelta ? null : vista_(a).princ;
+  const grigliaVista = (a) => perScelta ? { g: grigliaAiuola(a), manca: celleMancanti(a) } : vista_(a);
+  const occupazioneDi = (a) => perScelta ? occupazione(a.id) : vista_(a).occ;
   // Ogni aiuola come era nell'anno: misure di quell'anno e pacciamatura della coltura principale.
   const annoMisure = anno || String(oggi().getFullYear());
   const comeNellAnno = (a) => {
@@ -2794,13 +2791,12 @@ function suggerimentiAiuola(a) {
 // Scacchiera della scheda aiuola: tocca una casella vuota per piantarci, una piena per modificarla.
 // La scacchiera è quella della coltura messa per ultima (ognuna ha la sua), altrimenti quella proposta dall'aiuola.
 function htmlScacchiera(a) {
-  const princ = inCorso(a.id).filter((i) => i.celle?.length && i.griglia).sort((x, y) => y.data.localeCompare(x.data))[0];
-  const g = princ ? princ.griglia : grigliaAiuola(a);
-  if (a.semenzaio || g.righe * g.colonne <= 1) return "";
-  const manca = princ ? new Set(princ.grigliaManca || []) : celleMancanti(a);
-  const occ = occupazione(a.id, null, g);
+  if (a.semenzaio) return "";
+  // Come nella pianta: l'anno scelto in alto (annoPianta), oppure adesso.
+  const { colture, princ, g, manca, occ } = vistaScacchiera(a, annoPianta);
+  if (g.righe * g.colonne <= 1) return "";
   const diversa = !stessaGriglia(g, grigliaAiuola(a));
-  const tutta = impiantiAttivi(a.id).filter((i) => !i.celle?.length);
+  const tutta = colture.filter((i) => !i.celle?.length);
   const fitta = grigliaFitta(g);
   let h = `<div class="scorri-scacchiera">${intestazioneGriglia(g).replace('class="scacchiera', 'class="scacchiera grande')}`;
   for (let r = 0; r < g.righe; r++) {
@@ -2815,11 +2811,11 @@ function htmlScacchiera(a) {
     }
   }
   h += `</div></div>`;
-  const misura = misuraCasella({ ...a, ...misureAnno(a, String(oggi().getFullYear())), ...g });
-  return `<section class="carta"><h3 style="margin-top:0">Scacchiera ${g.righe} × ${g.colonne}${princ ? ` <span class="tenue piccolo">· di ${esc(PER_ID[princ.ortaggioId]?.nome.split(" (")[0].toLowerCase() ?? "")}</span>` : ""}${manca.size ? ` <span class="tenue piccolo">· ${g.righe * g.colonne - manca.size} caselle vere</span>` : ""}${misura ? ` <span class="tenue piccolo">· ${misura}</span>` : ""}</h3>${h}
+  const misura = misuraCasella({ ...a, ...misureAnno(a, annoPianta || String(oggi().getFullYear())), ...g });
+  return `<section class="carta"><h3 style="margin-top:0">${annoPianta ? `${annoPianta} · ` : ""}Scacchiera ${g.righe} × ${g.colonne}${princ ? ` <span class="tenue piccolo">· di ${esc(PER_ID[princ.ortaggioId]?.nome.split(" (")[0].toLowerCase() ?? "")}</span>` : ""}${manca.size ? ` <span class="tenue piccolo">· ${g.righe * g.colonne - manca.size} caselle vere</span>` : ""}${misura ? ` <span class="tenue piccolo">· ${misura}</span>` : ""}</h3>${h}
     <p class="tenue piccolo">Righe a, b, c… dal fondo verso di te; colonne 1, 2, 3… da sinistra a destra. Tocca una casella vuota per piantarci, una piena per modificarla.
     ${tutta.length ? `Su tutta l'aiuola: ${tutta.map((i) => nomeOrtaggio(i.ortaggioId)).join(", ")}.` : ""}</p>
-    ${diversa ? "" : `<div class="riga-bottoni"><button type="button" class="piccolo secondario" data-celle-mancanti="${a.id}">✕ Caselle che non esistono${manca.size ? ` (${manca.size})` : ""}</button></div>`}</section>`;
+    ${diversa || annoPianta ? "" : `<div class="riga-bottoni"><button type="button" class="piccolo secondario" data-celle-mancanti="${a.id}">✕ Caselle che non esistono${manca.size ? ` (${manca.size})` : ""}</button></div>`}</section>`;
 }
 
 function vistaAiuola(a) {
@@ -2830,12 +2826,20 @@ function vistaAiuola(a) {
     <p class="tenue piccolo">Serve solo a disegnare l'orto com'è davvero: qui non si semina e non conta nei m² coltivati.</p>
     <div class="riga-bottoni"><button class="secondario" id="modifica-aiuola">✏️ Modifica</button>
       <button class="secondario" id="elimina-aiuola">🗑️ Elimina</button></div>`;
-  const attivi = impiantiAttivi(a.id).sort((x, y) => x.data.localeCompare(y.data));
+  // Con un anno scelto in alto: le colture di quell'anno; adesso: quelle in corso, poi quelle in programma.
+  const anno = a.semenzaio ? null : annoPianta;
+  const tutteAttive = impiantiAttivi(a.id).sort((x, y) => x.data.localeCompare(y.data));
+  const attivi = anno ? coltureAnno(a.id, anno).sort((x, y) => x.data.localeCompare(y.data))
+    : a.semenzaio ? tutteAttive : tutteAttive.filter((i) => i.data <= aISO(oggi()));
+  const inProgramma = anno || a.semenzaio ? [] : tutteAttive.filter((i) => i.data > aISO(oggi()));
   const storici = S.impianti.filter((i) => i.finito && i.aiuolaId === a.id).sort((x, y) => y.data.localeCompare(x.data));
   const eventi = S.eventi.filter((e) => e.aiuolaId === a.id).sort((x, y) => y.data.localeCompare(x.data)).slice(0, 15);
 
-  const htmlAttivi = attivi.length ? `<ul class="elenco">${attivi.map((i) => {
+  const voce = (i) => {
     const o = PER_ID[i.ortaggioId];
+    if (i.finito) return `<li><div><b>${icona(o)} ${esc(o.nome)}</b>${i.varieta ? ` <span class="tenue">${esc(i.varieta)}</span>` : ""}${i.celle?.length ? ` · <b>${esc(testoCelle(i))}</b>` : ""}</div>
+      <div class="tenue piccolo">${esc(MODI[i.modo] ?? "")} il ${fmtAnno(daISO(i.data))} · finita${i.dataFine ? " il " + fmtAnno(daISO(i.dataFine)) : ""}</div>
+      <div class="riga-bottoni"><button class="piccolo secondario" data-modifica-imp="${i.id}">✏️ Modifica</button></div></li>`;
     const stime = stimeImpianto(i).map((s) => `${FASI[s.tipo].breve} ~${fmt(s.data)}`).join(" · ");
     const avv = htmlAvvisi(a.id, i.ortaggioId, i.data, i.id, i.celle, i.protezione).replace(/<div class="avviso">📅[^<]*<\/div>/, "");
     return `<li>
@@ -2861,7 +2865,9 @@ function vistaAiuola(a) {
         <button class="piccolo secondario" data-fine="${i.id}">Fine coltura</button>
       </div>
     </li>`;
-  }).join("")}</ul>` : `<p class="tenue">Niente in coltivazione.</p>`;
+  };
+  const htmlAttivi = (attivi.length ? `<ul class="elenco">${attivi.map(voce).join("")}</ul>` : `<p class="tenue">${anno ? `Niente nel ${anno}.` : "Niente in coltivazione."}</p>`)
+    + (inProgramma.length ? `<h4 style="margin:12px 0 0">🔔 In programma</h4><ul class="elenco">${inProgramma.map(voce).join("")}</ul>` : "");
 
   const perAnno = {};
   for (const i of storici) (perAnno[i.data.slice(0, 4)] ??= []).push(i);
@@ -2893,22 +2899,26 @@ function vistaAiuola(a) {
       <button class="secondario" id="elimina-aiuola">Elimina aiuola</button>
     </div>`;
   const padre = padreDi(a);
+  // Misure e pacciamatura dell'anno scelto (come nella pianta).
+  const princA = anno !== undefined && !a.semenzaio ? vistaScacchiera(a, anno).princ : null;
+  const aA = { ...a, ...misureAnno(a, anno || String(oggi().getFullYear())), pacciamatura: princA?.pacciamatura ?? a.pacciamatura };
   return `
     <p>${padre ? `<a href="#orto/${padre.id}">← ${esc(nomeAiuola(padre))} (tutte le parti)</a>` : `<a href="#orto">← Tutte le aiuole</a>`}</p>
-    <h2>${iconaAiuola(a)} ${esc(nomeAiuola(a))}</h2>
-    ${misureAiuola(a) || tipoAiuola(a) ? `<p class="tenue">${esc([misureAiuola(a), tipoAiuola(a)].filter(Boolean).join(" · "))}</p>` : ""}
+    <div class="riga" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <h2>${iconaAiuola(a)} ${esc(nomeAiuola(a))}</h2>${a.semenzaio ? "" : htmlSelettoreAnno()}</div>
+    ${misureAiuola(aA) || tipoAiuola(aA) ? `<p class="tenue">${esc([misureAiuola(aA), tipoAiuola(aA)].filter(Boolean).join(" · "))}</p>` : ""}
     ${a.note ? `<p>${esc(a.note)}</p>` : ""}
     ${PER_ID[a.fissa] ? `<div class="bene">${consiglioFissa(a)}</div>` : ""}
     ${a.semenzaio ? "" : malattieTerreno(a.id, null, aISO(oggi())).map((e) => `<div class="pericolo">${esc(testoMalattia(e))}</div>`).join("")}
     ${a.semenzaio ? `<p class="tenue piccolo">Qui segni le semine al riparo (in casa, in serra, in vasetti). Quando le piantine sono pronte premi «Trapianta» e scegli l'aiuola.</p>` : ""}
-    ${consiglioAiuolaVuota(a)}
+    ${anno ? "" : consiglioAiuolaVuota(a)}
     ${htmlScacchiera(a)}
-    <section class="carta"><h3 style="margin-top:0">In coltivazione</h3>${htmlAttivi}
+    <section class="carta"><h3 style="margin-top:0">${anno ? `Colture del ${anno}` : "In coltivazione"}</h3>${htmlAttivi}
       <div class="riga-bottoni"><button id="coltura-qui">＋ ${a.semenzaio ? "Nuova semina" : "Nuova coltura"}</button>
       ${a.semenzaio ? `<button id="piantine-comprate">🛒 Piantine comprate</button>` : ""}
       <button class="secondario" id="evento-qui">＋ Annotazione</button></div>
     </section>
-    ${suggerimentiAiuola(a)}
+    ${anno ? "" : suggerimentiAiuola(a)}
     ${a.semenzaio ? "" : `<section class="carta"><h3 style="margin-top:0">Negli anni passati</h3>${htmlTerraCambiata(a)}${htmlStorici}</section>`}
     ${eventi.length ? `<section class="carta"><h3 style="margin-top:0">Ultime annotazioni</h3>${htmlEventi(eventi)}</section>` : ""}
     <div class="riga-bottoni">
