@@ -3619,6 +3619,7 @@ function collega(root) {
   su("[data-zona-vista]", (b) => { S.impostazioni.zonaVista = b.dataset.zonaVista; salva_e_ridisegna(); });
   su("[data-zona]", (b) => moduloZona(b.dataset.zona));
   su("#nuova-coltura", () => moduloImpianto({}));
+  su("#controlla-versione", (b) => controllaVersione(b));
   su("#diagnosi", () => apriDiagnosi());
   su("[data-diagnosi-imp]", (b) => { const i = imp(b.dataset.diagnosiImp); apriDiagnosi({ ortaggioId: i?.ortaggioId, aiuolaId: i?.aiuolaId, impiantoId: i?.id }); });
   su("[data-concima]", (b) => { const a = aiuola(b.dataset.concima); moduloEvento({ tipo: "concimazione", aiuolaId: a.id, testo: testoConcimazione(a) }); });
@@ -3671,7 +3672,39 @@ window.addEventListener("hashchange", () => { chiudiFinestra(); disegna(); });
 // Il meteo si aggiorna quando si torna sull'app.
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && rotta().vista === "oggi") dopoOggi();
+  // Tornando sull'app (senza chiuderla) controllo se c'è una versione nuova.
+  if (document.visibilityState === "visible") navigator.serviceWorker?.getRegistration().then((r) => r?.update()).catch(() => {});
 });
+
+// Bottone «Controlla aggiornamenti» (pagina ❓): chiede versione.js alla rete;
+// se è più nuova scarica la versione nuova (service worker) e ricarica l'app.
+async function controllaVersione(b) {
+  b.disabled = true;
+  b.textContent = "Controllo…";
+  try {
+    const t = await (await fetch(`versione.js?controlla=${Date.now()}`, { cache: "no-store" })).text();
+    const n = Number(t.match(/VERSIONE_APP\s*=\s*(\d+)/)?.[1]);
+    if (!n) throw new Error("risposta strana");
+    if (n <= VERSIONE_APP) {
+      b.textContent = `✅ Hai già l'ultima versione (${VERSIONE_APP})`;
+      b.disabled = false;
+      return;
+    }
+    b.textContent = `⬇️ Scarico la versione ${n}…`;
+    const reg = await navigator.serviceWorker?.getRegistration();
+    if (reg) {
+      await new Promise((fatto) => {
+        navigator.serviceWorker.addEventListener("controllerchange", fatto, { once: true });
+        reg.update().catch(fatto);
+        setTimeout(fatto, 20000);
+      });
+    }
+    location.reload();
+  } catch {
+    b.textContent = "Non riesco a controllare: sei senza rete? Riprova";
+    b.disabled = false;
+  }
+}
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   // Quando arriva una versione nuova dell'app (nuovo sw.js) la propongo.

@@ -48,6 +48,8 @@ self.addEventListener("fetch", (e) => {
     return;
   }
   if (e.request.method !== "GET" || url.origin !== self.location.origin) return;
+  // «Controlla aggiornamenti»: versione.js chiesto alla rete, senza cache.
+  if (url.searchParams.has("controlla")) return;
   if (url.pathname.includes("/modello/")) {
     // File grandi che non cambiano: prima la cache, la rete solo se mancano.
     e.respondWith(caches.open(MODELLO).then(async (cache) => {
@@ -61,11 +63,13 @@ self.addEventListener("fetch", (e) => {
   }
   e.respondWith(
     caches.open(VERSIONE).then(async (cache) => {
+      // Prima la cache: i file nuovi arrivano tutti insieme con la versione nuova
+      // (install), così non si mescolano file vecchi e nuovi.
       const inCache = await cache.match(e.request, { ignoreSearch: true });
-      const dallaRete = fetch(e.request.url, { cache: "no-cache" })
-        .then((r) => { if (r.ok) cache.put(e.request, r.clone()); return r; })
-        .catch(() => inCache);
-      return inCache || dallaRete;
+      if (inCache) return inCache;
+      const r = await fetch(e.request.url, { cache: "no-cache" });
+      if (r.ok) cache.put(e.request, r.clone());
+      return r;
     }),
   );
 });

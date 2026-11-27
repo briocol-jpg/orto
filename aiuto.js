@@ -81,7 +81,7 @@ const GUIDA = [
     "Ogni volta che apri l'app, se l'orto è cambiato, l'app ne tiene una <b>🕘 copia automatica</b> sul telefono (le ultime 20). Hai cancellato qualcosa per sbaglio? In 📍 Luogo tocca <b>🕘 Copie automatiche</b> e <b>↩️ Ripristina</b> quella giusta; <b>🗑️</b> elimina una copia che non ti serve.",
     "Le copie automatiche però stanno sul telefono: ogni tanto, in 📍 Luogo, tocca <b>📤 Invia copia</b> e mandala a te stesso (WhatsApp o email). Se non lo fai da un mese, ☀️ Oggi te lo ricorda.",
     "Telefono nuovo? <b>📂 Ripristina da file</b> e scegli la copia.",
-    "Compare <b>🔄 C'è una versione nuova</b>? Toccalo: l'app si aggiorna. Il numero della versione è in fondo a questa pagina ❓.",
+    "Compare <b>🔄 C'è una versione nuova</b>? Toccalo: l'app si aggiorna. L'app controlla da sola quando la apri o ci torni; per controllare subito, in fondo a questa pagina ❓ tocca <b>🔄 Controlla aggiornamenti</b> (lì c'è anche il numero della versione).",
   ] },
   { ico: "👥", titolo: "Più persone, più orti", righe: [
     "Vuoi far vedere il tuo orto a un vicino? Tocca <b>📤 Invia copia</b> in 📍 Luogo e mandagliela su WhatsApp.",
@@ -101,5 +101,6 @@ function vistaAiuto() {
       <ol>${g.righe.map((r) => `<li>${r}</li>`).join("")}</ol>
     </details>`).join("")}
     <p class="tenue piccolo">Ti sei perso? Tocca 🌱 Orto in basso e riparti da lì. Niente si rompe: quasi tutto si può correggere con ✏️.</p>
-    <p class="tenue piccolo" style="text-align:center">Il mio orto · versione ${VERSIONE_APP} del ${fmtLungo(daISO(DATA_VERSIONE))}</p>`;
+    <p class="tenue piccolo" style="text-align:center">Il mio orto · versione ${VERSIONE_APP} del ${fmtLungo(daISO(DATA_VERSIONE))}</p>
+    <div class="riga-bottoni" style="justify-content:center"><button class="secondario" id="controlla-versione">🔄 Controlla aggiornamenti</button></div>`;
 }
