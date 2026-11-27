@@ -9,7 +9,7 @@ const GUIDA = [
   { ico: "🧭", titolo: "Le 5 schede in basso", righe: [
     "☀️ <b>Oggi</b>: cosa fare adesso, il meteo e le cose in programma.",
     "📅 <b>Calendario</b>: quando seminare, trapiantare e raccogliere ogni ortaggio. In alto ci sono la <b>🤝 Tabella dei buoni e cattivi vicini</b> (cosa sta bene insieme, nello stesso momento) e <b>🔄 Cosa mettere dopo</b> (la rotazione: cosa mettere in un'aiuola l'anno dopo, al posto di quello che c'era). Sul PC il calendario e le tabelle si vedono più grandi.",
-    "🌱 <b>Orto</b>: le tue aiuole e cosa c'è dentro.",
+    "🌱 <b>Orto</b>: le tue aiuole e cosa c'è dentro. In alto a destra scegli l'anno: «Adesso» mostra le colture in corso e in programma, un anno passato com'era l'orto quell'anno, l'anno prossimo le colture già in programma (con ＋ Nuova coltura e una data futura, o accettando il piano della stagione nuova).",
     "📓 <b>Diario</b>: tutto quello che hai fatto, anno per anno.",
     "📍 <b>Luogo</b>: dov'è l'orto, il clima e la copia dei dati.",
   ] },

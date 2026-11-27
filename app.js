@@ -2242,6 +2242,19 @@ function vistaCalendario() {
 // -----------------------------------------------------------------------------
 // Vista: Orto (aiuole)
 // -----------------------------------------------------------------------------
+// Anno della pianta dell'orto (selettore come nel Diario): null = adesso (colture
+// in corso e in programma); "2027" = le colture di quell'anno: messe quell'anno,
+// più quelle messe prima e ancora lì (perenni, colture che passano l'inverno).
+let annoPianta = null;
+function coltureAnno(aiuolaId, anno) {
+  return S.impianti.filter((i) => i.aiuolaId === aiuolaId && i.modo !== "acq" && PER_ID[i.ortaggioId]
+    && (i.data.startsWith(anno) || (i.data < anno && (!i.finito || (i.dataFine || "") >= anno))));
+}
+function anniPianta() {
+  const anni = new Set([String(oggi().getFullYear()), String(oggi().getFullYear() + 1)]);
+  for (const i of S.impianti) if (!aiuola(i.aiuolaId)?.semenzaio) anni.add(i.data.slice(0, 4));
+  return [...anni].sort().reverse();
+}
 function vistaOrto(idAiuola) {
   if (idAiuola && aiuola(idAiuola)) return vistaAiuola(aiuola(idAiuola));
   const scelta = zonaScelta();
@@ -2254,8 +2267,8 @@ function vistaOrto(idAiuola) {
     if (partiDi(a).length) return `<a class="carta" href="#orto/${a.id}" style="display:block;color:inherit;text-decoration:none">
       <div class="riga" style="display:flex;justify-content:space-between;gap:8px"><b>${iconaAiuola(a)} ${esc(nomeAiuola(a))}</b>
       <span class="tenue piccolo">${esc([misureAiuola(a), tipoAiuola(a)].filter(Boolean).join(" · "))}</span></div></a>`;
-    const attivi = impiantiAttivi(a.id);
-    const problemi = attivi.reduce((n, i) => n + avvisiRotazione(a.id, i.ortaggioId, i.data, i.id, i.celle).length
+    const attivi = annoPianta ? coltureAnno(a.id, annoPianta) : impiantiAttivi(a.id);
+    const problemi = annoPianta ? 0 : attivi.reduce((n, i) => n + avvisiRotazione(a.id, i.ortaggioId, i.data, i.id, i.celle).length
       + avvisiVicini(a.id, i.ortaggioId, i.id, i.celle).cattivi.length, 0);
     return `<a class="carta" href="#orto/${a.id}" style="display:block;color:inherit;text-decoration:none${a.dentro ? ";margin-left:20px" : ""}">
       <div class="riga" style="display:flex;justify-content:space-between;gap:8px"><b>${iconaAiuola(a)} ${esc(nomeAiuola(a))}</b>
@@ -2265,8 +2278,15 @@ function vistaOrto(idAiuola) {
     </a>`;
   }).join("");
   return `
-    <h2>${scelta ? esc(scelta) : "Le mie aiuole"}</h2>
+    <div class="riga" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <h2>${scelta ? esc(scelta) : "Le mie aiuole"}</h2>
+      <select id="anno-pianta" style="width:auto" aria-label="Anno">
+        <option value="">Adesso (in corso e in programma)</option>
+        ${anniPianta().map((y) => `<option value="${y}" ${y === annoPianta ? "selected" : ""}>${y}${y === String(oggi().getFullYear()) ? " (quest'anno)" : y === String(oggi().getFullYear() + 1) ? " (prossima stagione)" : ""}</option>`).join("")}
+      </select>
+    </div>
     ${bottoni}
+    ${annoPianta ? `<p class="tenue piccolo">🗓️ Le colture del <b>${annoPianta}</b>${annoPianta > String(oggi().getFullYear()) ? " (in programma: aggiungile con ＋ Nuova coltura con una data futura, o accetta il piano della stagione nuova)" : ""}. Con le scacchiere cambiate le caselle sono riportate su quella di oggi.</p>` : ""}
     ${htmlPianta(scelta)}
     ${S.aiuole.length <= 1 && !IN_PROVA ? htmlInvitoProva() : ""}
     ${S.aiuole.length <= 1 ? `<p class="tenue">Crea un'aiuola per ogni pezzo dell'orto: l'app ricorda cosa ci hai coltivato ogni anno e ti avvisa se ripeti la stessa famiglia (rotazione) o metti vicini ortaggi che non vanno d'accordo.</p>` : ""}
@@ -2284,6 +2304,15 @@ function vistaOrto(idAiuola) {
 // destra in ordine di numero, in scala, con le colture in corso.
 // perScelta: solo il disegno, dentro un modulo (le aiuole si toccano per sceglierle).
 function htmlPianta(soloZona, perScelta = false) {
+  // Colture da disegnare: adesso, o quelle dell'anno scelto (annoPianta).
+  const anno = perScelta ? null : annoPianta;
+  const coltureDi = (id) => anno ? coltureAnno(id, anno) : impiantiAttivi(id);
+  const occupazioneDi = (a) => {
+    if (!anno) return occupazione(a.id);
+    const m = {};
+    for (const i of coltureDi(a.id)) for (const c of celleSuAiuola(i, a)) (m[c] ??= []).push(i);
+    return m;
+  };
   const blocchi = zone().filter((z) => !soloZona || z === soloZona).map((zona) => {
     const lista = aiuoleOrdinate().filter((a) => !a.semenzaio && !a.dentro && (a.zona || ZONA_PREDEFINITA) === zona);
     if (!lista.length) return "";
@@ -2351,7 +2380,7 @@ function htmlPianta(soloZona, perScelta = false) {
       return q.h < fs * 3 || q.w < fs * 3.2 ? "sotto" : "dentro";
     };
     const spazioSotto = (q) => q.f !== file[file.length - 1] && doveScritte(q) === "sotto"
-      ? fs * (2.8 + (q.a.vaso && impiantiAttivi(q.a.id).length ? 1.4 : 0)) : 0;
+      ? fs * (2.8 + (q.a.vaso && coltureDi(q.a.id).length ? 1.4 : 0)) : 0;
     if (pezzi.some(spazioSotto)) {
       pezzi = posiziona(corridoio, spazioSotto);
       tutti = pezzi.flatMap((q) => angoli(q.x, q.y, q.w, q.h));
@@ -2371,15 +2400,15 @@ function htmlPianta(soloZona, perScelta = false) {
       // Così tra le file resta solo il vialetto vero.
       const dove = doveScritte({ f, w, h });
       const parti = partiDi(a);
-      const problemi = [a, ...parti].some((b) => (b.capanno ? [] : impiantiAttivi(b.id)).some((i) => avvisiRotazione(b.id, i.ortaggioId, i.data, i.id, i.celle).length
+      const problemi = !anno && [a, ...parti].some((b) => (b.capanno ? [] : coltureDi(b.id)).some((i) => avvisiRotazione(b.id, i.ortaggioId, i.data, i.id, i.celle).length
         || avvisiVicini(b.id, i.ortaggioId, i.id, i.celle).cattivi.length));
       const e = fs * 1.25; // lato di un'emoji
       const cx = x + w / 2;
-      const tutte = (a.capanno ? [] : impiantiAttivi(a.id)).map((i) => PER_ID[i.ortaggioId]);
+      const tutte = (a.capanno ? [] : coltureDi(a.id)).map((i) => PER_ID[i.ortaggioId]);
       const posti = Math.max(1, Math.floor((w - fs * 0.3) / e)) * Math.max(0, Math.floor((h - fs * 0.6) / e));
       // Il disegno dentro un rettangolo (l'aiuola o una sua parte): scacchiera, oppure le icone in fila.
       const riempi = (a, x, y, w, h, dove) => {
-        const attivi = a.capanno ? [] : impiantiAttivi(a.id);
+        const attivi = a.capanno ? [] : coltureDi(a.id);
         const perRiga = Math.max(1, Math.floor((w - fs * 0.3) / e));
         const righe = Math.max(0, Math.floor((h - fs * (dove === "parte" ? 1.4 : 0.6)) / e));
         const tutte = attivi.map((i) => PER_ID[i.ortaggioId]);
@@ -2419,7 +2448,7 @@ function htmlPianta(soloZona, perScelta = false) {
           // Linee solo se le caselle sono abbastanza grandi da vederle (almeno 5 px).
           if (!vasi && cw * scala >= 5) for (let c = 1; c < g.colonne; c++) linee += seg(x + c * cw, y, x + c * cw, y + h);
           if (!vasi && ch * scala >= 5) for (let r = 1; r < g.righe; r++) linee += seg(x, y + r * ch, x + w, y + r * ch);
-          const occ = occupazione(a.id);
+          const occ = occupazioneDi(a);
           const libere = [];
           const dim = Math.min(e * 0.85, Math.min(cw, ch) * 0.7);
           // Una casella lunga e stretta è una fila: icone in fila per tutta la
@@ -2445,7 +2474,7 @@ function htmlPianta(soloZona, perScelta = false) {
             else libere.push([r, c]);
           }
           // Colture su tutta l'aiuola: nelle caselle libere.
-          impiantiAttivi(a.id).filter((i) => !i.celle?.length).forEach((i, k) => {
+          coltureDi(a.id).filter((i) => !i.celle?.length).forEach((i, k) => {
             if (!libere[k]) return;
             const [r, c] = libere[k];
             testi += inCella(r, c, [PER_ID[i.ortaggioId]]);
@@ -3470,6 +3499,7 @@ function collega(root) {
   }
 
   el("anno-diario")?.addEventListener("change", (e) => { annoDiario = e.target.value; disegna(); });
+  el("anno-pianta")?.addEventListener("change", (e) => { annoPianta = e.target.value || null; disegna(); });
   su("#gps", prendiGPS);
   su("#manuale", posizioneManuale);
   su("#analizza-clima", () => analizzaClima(true));
