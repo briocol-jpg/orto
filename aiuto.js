@@ -52,7 +52,7 @@ const GUIDA = [
     "Piante avvizzite o marce per colpa della terra (fusto marrone dentro, base marcia, palline sulle radici)? <b>＋ Annotazione</b> → <b>🦠 Malattia del terreno</b>, scegli l'aiuola, la malattia (o «Non so») e la famiglia: per 3–5 anni l'app ti avvisa in rosso se ci rimetti quella famiglia, e il piano dell'anno nuovo la tiene lontana.",
     "Quando la pianta è finita tocca <b>Fine coltura</b>: resta nella storia dell'aiuola.",
     "Nel 📓 Diario c'è <b>🏅 Medaglie</b>: arrivano da sole mentre usi l'app (primo raccolto da 10 kg, un anno senza avvisi di rotazione, la copia dei dati…).",
-    "Per correggere o cancellare qualcosa tocca <b>✏️</b> (anche nel diario e negli anni passati).",
+    "Per correggere o cancellare qualcosa tocca <b>✏️</b> (anche nel diario). Negli anni passati di un'aiuola tocca un ortaggio per modificarlo, oppure <b>🔄 dopo e vicini</b> per vedere cosa mettere dopo lì (tocca per una nuova coltura), cosa evitare e fino a quando, e i suoi vicini. Sotto ogni anno c'è la scacchiera com'era: se cambi la scacchiera dell'aiuola (per esempio da pomodori a lattughe) la storia resta com'era.",
   ] },
   { ico: "📋", titolo: "Preparare l'orto dell'anno nuovo", righe: [
     "In 🌱 Orto tocca <b>📋 Prepara l'orto</b>.",

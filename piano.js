@@ -92,7 +92,7 @@ function tutteLeCelle(a) {
 // Parte dell'aiuola occupata da una coltura (1 = tutta).
 function frazione(i, a) {
   if (!haGriglia(a) || !i.celle?.length) return 1;
-  return Math.min(1, celleValide(a, i.celle).length / celleTotali(a));
+  return Math.min(1, celleSuAiuola(i, a).length / celleTotali(a));
 }
 function spostaAnni(iso, n) {
   const [y, m, d] = iso.split("-").map(Number);
@@ -159,7 +159,7 @@ function vociAnnoScorso(anno) {
       inizio: aISO(inizio), fine: aISO(fine), modo, semenzaio, serra, protezione,
       origine: a.id, frazioneOrigine: fr, varieta: i.varieta || "", quantita: i.quantita || "",
       // Caselle dell'anno scorso: nell'aiuola nuova si riprende la stessa disposizione.
-      ...(haGriglia(a) && i.celle?.length ? { celleOrigine: celleValide(a, i.celle), grigliaOrigine: grigliaAiuola(a) } : {}),
+      ...(haGriglia(a) && i.celle?.length ? { celleOrigine: i.griglia ? i.celle : celleValide(a, i.celle), grigliaOrigine: grigliaDi(i, a) } : {}),
     });
   }
   return voci.sort((x, y) => x.inizio.localeCompare(y.inizio) || PER_ID[x.ortaggioId].nome.localeCompare(PER_ID[y.ortaggioId].nome, "it"));
@@ -219,7 +219,7 @@ function storiaAiuole(anno) {
     }
     // Terra cambiata dopo questa coltura: per la rotazione non conta più.
     const vecchia = i.data < terraCambiata(a.id, `${anno}-12-31`);
-    (st[a.id] ??= []).push({ vecchia, distanza: anno - y, anno: y, fam: o.fam, ortaggioId: o.id, esig: o.esig, fr: frazione(i, a), celle: i.celle?.length ? new Set(celleValide(a, i.celle)) : null });
+    (st[a.id] ??= []).push({ vecchia, distanza: anno - y, anno: y, fam: o.fam, ortaggioId: o.id, esig: o.esig, fr: frazione(i, a), celle: i.celle?.length ? new Set(celleSuAiuola(i, a)) : null });
   }
   return st;
 }
@@ -234,7 +234,7 @@ function occupazioniFisse(anno) {
     const s = daISO(i.data);
     const fine = i.finito ? (i.dataFine ? daISO(i.dataFine) : s) : fineImpianto(i);
     if (fine < inizioAnno || s.getFullYear() > anno) continue;
-    (fisse[a.id] ??= []).push({ fisso: true, i, ortaggioId: o.id, s, e: fine, celle: i.celle?.length ? celleValide(a, i.celle) : null, fr: frazione(i, a) });
+    (fisse[a.id] ??= []).push({ fisso: true, i, ortaggioId: o.id, s, e: fine, celle: i.celle?.length ? celleSuAiuola(i, a) : null, fr: frazione(i, a) });
   }
   return fisse;
 }

@@ -364,6 +364,11 @@ svg.pianta a { cursor: pointer; }
    scorrere la finestra col dito fuori dalla scacchiera. */
 .scorri-scacchiera { overflow: auto; max-height: 45vh; max-height: 45dvh; }
 .scacchiera.fitta { gap: 2px; width: max-content; }
+/* Com'era l'aiuola negli anni passati: scacchiera piccola di sola lettura */
+.scacchiera.mini { gap: 2px; max-width: 360px; }
+.scacchiera.mini .cella { min-height: 1.7em; padding: 0; justify-content: center; font-size: 0.85rem; }
+.scacchiera.mini .cella.piena { background: var(--verde-chiaro); }
+.scacchiera.mini.fitta .cella { min-height: 1.4em; height: 1.4em; }
 .scacchiera.fitta .cella, .scacchiera.fitta.grande .cella { min-height: 2.6em; height: 2.6em; font-size: 0.65rem; padding: 0; overflow: hidden; }
 .scacchiera.fitta .cella .em { font-size: 1rem; }
 .scacchiera.fitta .intest { background: var(--carta); position: sticky; z-index: 1; font-size: 0.7rem; }

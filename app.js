@@ -508,7 +508,7 @@ function avvisiRotazione(aiuolaId, ortaggioId, dataISO, escludiId, celle) {
     const altro = PER_ID[i.ortaggioId];
     if (!altro || altro.fam !== o.fam) continue;
     // Le caselle contano solo nella stessa aiuola (l'aiuola grande ha un'altra scacchiera).
-    if (i.aiuolaId === aiuolaId && celle?.length && i.celle?.length && !i.celle.some((c) => celle.includes(c))) continue;
+    if (i.aiuolaId === aiuolaId && celle?.length && i.celle?.length && !celleSuAiuola(i).some((c) => celle.includes(c))) continue;
     const d = daISO(i.data);
     const anni = data.getFullYear() - d.getFullYear();
     if (anni >= 1 && anni < ANNI_ROTAZIONE) {
@@ -572,6 +572,65 @@ function celleValide(a, celle) {
   const g = grigliaAiuola(a), via = celleMancanti(a);
   return haGriglia(a) ? (celle || []).filter((x) => { const q = cellaRC(x); return q.r >= 0 && q.r < g.righe && q.c >= 0 && q.c < g.colonne && !via.has(x); }) : [];
 }
+// Scacchiera di una coltura: quella che aveva quando l'aiuola ha cambiato
+// scacchiera (i.griglia, con i.grigliaManca = caselle che allora non esistevano),
+// altrimenti quella attuale. Così la storia resta com'era.
+function grigliaDi(i, a = aiuola(i.aiuolaId)) { return i.griglia || grigliaAiuola(a); }
+function stessaGriglia(g, h) { return g.righe === h.righe && g.colonne === h.colonne; }
+// Caselle riportate da una scacchiera a un'altra, in proporzione (centro della casella nuova).
+function riportaCelle(celle, go, g) {
+  const src = new Set(celle), out = [];
+  for (let r = 0; r < g.righe; r++) for (let c = 0; c < g.colonne; c++) {
+    if (src.has(nomeCella(Math.floor((r + 0.5) * go.righe / g.righe), Math.floor((c + 0.5) * go.colonne / g.colonne)))) out.push(nomeCella(r, c));
+  }
+  if (!out.length) for (const x of celle) { // scacchiera nuova più grossa: almeno la casella che la contiene
+    const q = cellaRC(x); out.push(nomeCella(Math.floor(q.r * g.righe / go.righe), Math.floor(q.c * g.colonne / go.colonne)));
+  }
+  return ordinaCelle([...new Set(out)]);
+}
+// Caselle di una coltura sulla scacchiera attuale dell'aiuola (per rotazione e piano).
+function celleSuAiuola(i, a = aiuola(i.aiuolaId)) {
+  if (!i.celle?.length || !haGriglia(a)) return [];
+  const go = grigliaDi(i, a);
+  return celleValide(a, stessaGriglia(go, grigliaAiuola(a)) ? i.celle : riportaCelle(i.celle, go, grigliaAiuola(a)));
+}
+// Prima di cambiare la scacchiera di un'aiuola: le colture finite tengono la
+// loro (i.griglia), quelle in corso si riportano sulla nuova.
+function cambiaScacchiera(a, nuova) {
+  const g = grigliaAiuola(a), n = grigliaAiuola(nuova);
+  if (stessaGriglia(g, n)) return;
+  for (const i of S.impianti) {
+    if (i.aiuolaId !== a.id || !i.celle?.length) continue;
+    if (!i.finito) { i.celle = riportaCelle(i.celle, grigliaDi(i, a), n); delete i.griglia; delete i.grigliaManca; continue; }
+    if (i.griglia) { if (stessaGriglia(i.griglia, n)) { delete i.griglia; delete i.grigliaManca; } continue; }
+    i.griglia = { righe: g.righe, colonne: g.colonne };
+    if (a.celleMancanti?.length) i.grigliaManca = [...a.celleMancanti];
+  }
+}
+// Scacchiera piccola di sola lettura: celleIcone = { a1: "🍅", … }.
+function htmlMiniScacchiera(g, manca, celleIcone) {
+  let h = `<div class="scorri-scacchiera">${intestazioneGriglia(g).replace('class="scacchiera', 'class="scacchiera mini')}`;
+  for (let r = 0; r < g.righe; r++) {
+    h += `<span class="intest riga">${nomeRiga(r)}</span>`;
+    for (let c = 0; c < g.colonne; c++) {
+      const n = nomeCella(r, c), ic = celleIcone[n];
+      h += manca.has(n) ? `<span class="cella mancante"></span>` : `<span class="cella${ic ? " piena" : ""}" title="${n}">${ic || ""}</span>`;
+    }
+  }
+  return h + `</div></div>`;
+}
+// Com'era l'aiuola per un gruppo di colture (stessa scacchiera): una mini scacchiera per scacchiera.
+function htmlComEra(a, imps) {
+  const gruppi = new Map();
+  for (const i of imps) {
+    if (!i.celle?.length || (!haGriglia(a) && !i.griglia)) continue;
+    const g = grigliaDi(i, a), k = `${g.righe}x${g.colonne}`;
+    if (!gruppi.has(k)) gruppi.set(k, { g, manca: new Set(i.griglia ? i.grigliaManca || [] : a.celleMancanti || []), ic: {} });
+    for (const c of i.celle) gruppi.get(k).ic[c] = (gruppi.get(k).ic[c] || "") + icona(PER_ID[i.ortaggioId]);
+  }
+  const ora = grigliaAiuola(a);
+  return [...gruppi.values()].map(({ g, manca, ic }) => `<div class="com-era"><p class="tenue piccolo" style="margin:4px 0 0">Scacchiera ${g.righe} × ${g.colonne}${stessaGriglia(g, ora) ? "" : " (com'era allora)"}</p>${htmlMiniScacchiera(g, manca, ic)}</div>`).join("");
+}
 function moduloCelleMancanti(a) {
   const g = grigliaAiuola(a);
   const via = celleMancanti(a);
@@ -600,7 +659,7 @@ function moduloCelleMancanti(a) {
     f.querySelector("#manca-salva").addEventListener("click", () => {
       a.celleMancanti = ordinaCelle([...via]);
       if (via.size >= g.righe * g.colonne) a.celleMancanti = [];
-      for (const i of S.impianti) if (i.aiuolaId === a.id && i.celle?.length) i.celle = celleValide(a, i.celle);
+      for (const i of S.impianti) if (i.aiuolaId === a.id && i.celle?.length && !i.finito) i.celle = celleValide(a, i.celle);
       salva_e_ridisegna();
       chiudiFinestra();
     });
@@ -992,13 +1051,14 @@ function moduloAiuola(a) {
       const doppia = S.aiuole.some((x) => x !== a && !x.semenzaio && !x.dentro && (x.zona || ZONA_PREDEFINITA) === v.zona && String(x.numero) === v.numero);
       if (doppia && v.faiPosto) for (const [x, nuovo] of spostamentiAiuole(v.zona, dati.numero, a)) x.numero = nuovo;
       if (a) {
+        cambiaScacchiera(a, dati);
         Object.assign(a, dati);
         delete a.misure;
         // Cambiata a mano la serra di quest'anno: vale anche per la posizione decisa dal piano.
         const quest = String(oggi().getFullYear());
         if (a.serraAnni?.[quest] != null) a.serraAnni[quest] = v.copertura === "serra";
         // Caselle che non esistono più dopo aver ridotto la scacchiera.
-        for (const i of S.impianti) if (i.aiuolaId === a.id && i.celle) i.celle = celleValide(a, i.celle);
+        for (const i of S.impianti) if (i.aiuolaId === a.id && i.celle && !i.griglia) i.celle = celleValide(a, i.celle);
       }
       else S.aiuole.push({ id: nuovoId(), ...dati });
     },
@@ -1103,8 +1163,9 @@ function moduloParte(b, p) {
       const dati = { nome: v.nome, note: v.note, pacciamatura: v.pacciamatura, fissa: v.fissa, ...grigliaAiuola({ righe: v.righe, colonne: v.colonne }) };
       dati[fondo ? "lunghezza" : "larghezza"] = numeroMisura(v.misura);
       if (b) {
+        cambiaScacchiera(b, dati);
         Object.assign(b, dati);
-        for (const i of S.impianti) if (i.aiuolaId === b.id && i.celle) i.celle = celleValide(b, i.celle);
+        for (const i of S.impianti) if (i.aiuolaId === b.id && i.celle && !i.griglia) i.celle = celleValide(b, i.celle);
       } else {
         const usate = partiDi(p).map((x) => x.parte);
         S.aiuole.push({ id: nuovoId(), dentro: p.id, parte: [...LETTERE_PARTI].find((l) => !usate.includes(l)) || "z", ...dati });
@@ -1297,6 +1358,8 @@ function moduloImpianto({ aiuolaId, ortaggioId, impianto, celle } = {}) {
   let ultimaAiuola = aiuolaIniziale;
   // Coltura nuova: la data proposta segue ortaggio, modo e aiuola finché non la cambi tu.
   let dataProposta = i ? null : aISO(oggi()), ultimaChiave = "";
+  // Coltura passata con la scacchiera di allora: le caselle non si toccano.
+  const storica = i?.griglia && !stessaGriglia(i.griglia, grigliaAiuola(aiuola(i.aiuolaId))) ? i : null;
   modulo({
     titolo: i ? "Modifica coltura" : "Nuova coltura",
     campi: [
@@ -1341,8 +1404,14 @@ function moduloImpianto({ aiuolaId, ortaggioId, impianto, celle } = {}) {
         proposta = `<div class="avviso">📅 Per ${esc(PER_ID[v.ortaggioId].nome.toLowerCase())} il calendario non prevede ${esc(MODI[modoOra].toLowerCase())}: prova un altro "Come".</div>`;
       }
       const v2 = { ...v, data: form.elements.data.value };
-      const avvisoCelle = aggiornaSceltaCelle(form, v2.aiuolaId, i?.id);
-      const celleScelte = form.elements.celle.value.split(",").filter(Boolean);
+      const tieni = storica && v2.aiuolaId === storica.aiuolaId;
+      if (tieni) {
+        form.elements.celle.value = storica.celle.join(",");
+        form.querySelector("#w_celle").hidden = false;
+        form.querySelector("#g_celle").innerHTML = `<p class="tenue piccolo">Caselle sulla scacchiera di allora, diversa da quella di oggi: restano com'erano.</p>${htmlComEra(aiuola(storica.aiuolaId), [storica])}`;
+      }
+      const avvisoCelle = tieni ? "" : aggiornaSceltaCelle(form, v2.aiuolaId, i?.id);
+      const celleScelte = tieni ? celleSuAiuola(storica) : form.elements.celle.value.split(",").filter(Boolean);
       return aggiornaNuovaAiuola(v2, form) + avvisoCelle + proposta + htmlAvvisi(v2.aiuolaId, v2.ortaggioId, v2.data, i?.id, celleScelte, protezione)
         + (CONSIGLI_PROTEZIONE[protezione] ? `<div class="bene piccolo">${CONSIGLI_PROTEZIONE[protezione]}</div>` : "")
         + (v2.ortaggioId && !aiuola(v2.aiuolaId)?.semenzaio && testoIntercalari(v2.ortaggioId, v2.data) ? `<div class="bene piccolo">${testoIntercalari(v2.ortaggioId, v2.data)}</div>` : "");
@@ -1350,7 +1419,11 @@ function moduloImpianto({ aiuolaId, ortaggioId, impianto, celle } = {}) {
     salva: (v) => {
       v.aiuolaId = aiuolaDaModulo(v);
       togliCampiNuovaAiuola(v);
-      v.celle = celleValide(aiuola(v.aiuolaId), v.celle.split(",").filter(Boolean));
+      if (storica && v.aiuolaId === storica.aiuolaId) v.celle = storica.celle;
+      else {
+        v.celle = celleValide(aiuola(v.aiuolaId), v.celle.split(",").filter(Boolean));
+        if (i) { delete i.griglia; delete i.grigliaManca; }
+      }
       if (aiuola(v.aiuolaId)?.semenzaio) { v.modo = "sem"; v.protezione = ""; }
       if (i) {
         // Riaperta: non è più finita, via esito e data di fine.
@@ -2068,6 +2141,42 @@ function dopoDi(id) {
   return { ideali, evita, perche, malattia, nellAiuola };
 }
 
+// Finestra di una coltura degli anni passati (pagina dell'aiuola): cosa mettere
+// dopo (chip = nuova coltura qui), da evitare fino a quando, vicini, modifica.
+function finestraStorico(i) {
+  const o = PER_ID[i.ortaggioId]; if (!o) return moduloImpianto({ impianto: i });
+  const a = aiuola(i.aiuolaId), anno = Number(i.data.slice(0, 4));
+  const { ideali, evita, perche } = dopoDi(o.id);
+  const vasi = Boolean(formaVasiCaselle(a));
+  const chip = (x, nuovo) => nuovo ? `<button type="button" class="chip" data-nuova-qui="${x.id}">＋ ${icona(x)} ${esc(x.nome.split(" (")[0])}</button>` : `<span class="chip">${icona(x)} ${esc(x.nome.split(" (")[0])}</span>`;
+  const lista = (l, nuovo) => l.length ? [...l].sort((p, q) => p.nome.localeCompare(q.nome, "it")).map((x) => chip(x, nuovo)).join(" ") : `<span class="tenue">—</span>`;
+  const amici = amiciDi(o.id).map((x) => PER_ID[x]).filter(Boolean), nemici = nemiciDi(o.id).map((x) => PER_ID[x]).filter(Boolean);
+  const fino = anno + ANNI_ROTAZIONE;
+  apriFinestra(`
+    <h2>${icona(o)} ${esc(o.nome)} · ${anno}</h2>
+    <p class="tenue">${esc(nomeAiuolaId(i.aiuolaId))} · ${esc(FAMIGLIE[o.fam])}${i.varieta ? ` · ${esc(i.varieta)}` : ""}</p>
+    ${a ? htmlComEra(a, [i]) : ""}
+    ${PERENNI.has(o.id) || a?.fissa === o.id ? `<p class="tenue piccolo">Coltura che resta nello stesso posto: la rotazione vale quando la togli.</p>` : ""}
+    <h3>🔄 Cosa mettere dopo, qui</h3>
+    <p class="piccolo">${esc(perche)} Tocca per una nuova coltura in quest'aiuola.</p>
+    <p>${lista(ideali, !a?.semenzaio)}</p>
+    <p class="piccolo"><b>⚠️ Da evitare qui fino al ${fino}</b>${vasi ? " (o rinnova la terra dei vasi)" : ""}: stessa famiglia${evita.some((x) => x.fam !== o.fam) ? " e chi ha le stesse malattie del terreno" : ""}.</p>
+    <p>${lista(evita, false)}</p>
+    <h3>🤝 Vicini</h3>
+    <p class="piccolo"><b>Buoni:</b></p><p>${lista(amici, false)}</p>
+    <p class="piccolo"><b>Cattivi:</b></p><p>${lista(nemici, false)}</p>
+    <p class="tenue piccolo"><a href="#dopo" data-chiudi>Tabella completa: cosa mettere dopo</a> · <a href="#vicini" data-chiudi>buoni e cattivi vicini</a></p>
+    <div class="riga-bottoni">
+      <button type="button" class="secondario" id="storico-modifica">✏️ Modifica o elimina</button>
+      <button type="button" class="secondario" id="storico-scheda">📖 Scheda</button>
+      <button type="button" data-chiudi>Chiudi</button>
+    </div>`, (f) => {
+    f.querySelector("#storico-modifica").addEventListener("click", () => moduloImpianto({ impianto: i }));
+    f.querySelector("#storico-scheda").addEventListener("click", () => schedaOrtaggio(o.id));
+    f.querySelectorAll("[data-nuova-qui]").forEach((b) => b.addEventListener("click", () => moduloImpianto({ aiuolaId: i.aiuolaId, ortaggioId: b.dataset.nuovaQui })));
+  });
+}
+
 function vistaDopo() {
   const chip = (x) => `<span class="chip">${icona(x)} ${esc(x.nome)}</span>`;
   const nomi = (l) => [...l].sort((p, q) => p.nome.localeCompare(q.nome, "it")).map(chip).join(" ") || `<span class="tenue">—</span>`;
@@ -2313,17 +2422,33 @@ function htmlPianta(soloZona, perScelta = false) {
           const occ = occupazione(a.id);
           const libere = [];
           const dim = Math.min(e * 0.85, Math.min(cw, ch) * 0.7);
+          // Una casella lunga e stretta è una fila: icone in fila per tutta la
+          // lunghezza (alternate se nella fila ci sono più colture); nei vasi una sola.
+          const lunga = !vasi && Math.max(cw, ch) >= 2 * Math.min(cw, ch);
+          const inCella = (r, c, orti) => {
+            const mx = xCella(r, c), my = y + (r + 0.5) * ch;
+            if (!lunga) return iconaPianta(mx, my, orti[0], dim);
+            const lungo = Math.max(cw, ch), passo = dim * 1.15;
+            const quante = Math.max(1, Math.min(60, Math.floor(lungo / passo)));
+            const verticale = ch > cw, spazio = lungo / quante;
+            let h = "";
+            for (let k = 0; k < quante; k++) {
+              const d = -lungo / 2 + spazio * (k + 0.5);
+              h += iconaPianta(verticale ? mx : mx + d, verticale ? my + d : my, orti[k % orti.length], dim);
+            }
+            return h;
+          };
           for (let r = 0; r < g.righe; r++) for (let c = 0; c < g.colonne; c++) {
             const n = nomeCella(r, c);
             if (manca.has(n)) continue;
-            if (occ[n]) testi += iconaPianta(xCella(r, c), y + (r + 0.5) * ch, PER_ID[occ[n][0].ortaggioId], dim);
+            if (occ[n]) testi += inCella(r, c, [...new Set(occ[n].map((i) => i.ortaggioId))].map((id) => PER_ID[id]));
             else libere.push([r, c]);
           }
           // Colture su tutta l'aiuola: nelle caselle libere.
           impiantiAttivi(a.id).filter((i) => !i.celle?.length).forEach((i, k) => {
             if (!libere[k]) return;
             const [r, c] = libere[k];
-            testi += iconaPianta(xCella(r, c), y + (r + 0.5) * ch, PER_ID[i.ortaggioId], dim);
+            testi += inCella(r, c, [PER_ID[i.ortaggioId]]);
           });
         } else {
           testi = (posti ? emoji : []).map((em, k) => {
@@ -2586,7 +2711,7 @@ function vistaAiuola(a) {
   const perAnno = {};
   for (const i of storici) (perAnno[i.data.slice(0, 4)] ??= []).push(i);
   const htmlStorici = Object.keys(perAnno).length ? Object.entries(perAnno).sort((x, y) => y[0].localeCompare(x[0])).map(([anno, l]) =>
-    `<p><b>${anno}:</b> ${l.map((i) => `<button type="button" class="voce-storico" data-modifica-imp="${i.id}" title="Tocca per modificare o eliminare">${nomeOrtaggio(i.ortaggioId)}${i.esito === "fallito" ? " ✗" : ""}</button>${i.commento ? ` <span class="tenue">(${esc(i.commento)})</span>` : ""}`).join(", ")}</p>`).join("") + `<p class="tenue piccolo">Tocca un ortaggio per modificarlo o eliminarlo.</p>`
+    `<p style="margin-bottom:2px"><b>${anno}:</b> ${l.map((i) => `<button type="button" class="voce-storico" data-modifica-imp="${i.id}" title="Tocca per modificare o eliminare">${nomeOrtaggio(i.ortaggioId)}${i.esito === "fallito" ? " ✗" : ""}</button> <button type="button" class="chip piccolo" data-storico="${i.id}" title="Cosa mettere dopo e vicini">🔄 dopo e vicini</button>${i.commento ? ` <span class="tenue">(${esc(i.commento)})</span>` : ""}`).join(", ")}</p>${htmlComEra(a, l)}`).join("") + `<p class="tenue piccolo">Tocca un ortaggio per modificarlo o eliminarlo; tocca <b>🔄 dopo e vicini</b> per vedere cosa mettere dopo lì e i suoi vicini.</p>`
     : `<p class="tenue">Ancora niente: qui comparirà cosa hai coltivato negli anni passati.</p>`;
 
   const parti = partiDi(a);
@@ -3299,6 +3424,7 @@ function collega(root) {
     const t = e.target.value.trim().toLowerCase();
     document.querySelectorAll("table.vicini tbody tr").forEach((tr) => { tr.hidden = Boolean(t) && !tr.dataset.cerca.includes(t); });
   }));
+  su("[data-storico]", (b) => finestraStorico(imp(b.dataset.storico)));
   su("[data-trapianta]", (b) => moduloTrapianto(imp(b.dataset.trapianta)));
   su("[data-raccolto]", (b) => moduloEvento({ tipo: "raccolto", impiantoId: b.dataset.raccolto, aiuolaId: imp(b.dataset.raccolto)?.aiuolaId }));
   su("[data-evento-imp]", (b) => moduloEvento({ tipo: "nota", impiantoId: b.dataset.eventoImp, aiuolaId: imp(b.dataset.eventoImp)?.aiuolaId }));
