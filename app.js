@@ -512,7 +512,9 @@ function avvisiRotazione(aiuolaId, ortaggioId, dataISO, escludiId, celle) {
     const d = daISO(i.data);
     const anni = data.getFullYear() - d.getFullYear();
     if (anni >= 1 && anni < ANNI_ROTAZIONE) {
-      avvisi.push(`Nel ${d.getFullYear()} qui c'era ${altro.nome.toLowerCase()} (${FAMIGLIE[o.fam].toLowerCase()}): meglio aspettare ${ANNI_ROTAZIONE} anni prima di rimettere la stessa famiglia.`);
+      avvisi.push(formaVasiCaselle(aiuola(aiuolaId))
+        ? `Nel ${d.getFullYear()} in questi vasi c'era ${altro.nome.toLowerCase()} (${FAMIGLIE[o.fam].toLowerCase()}): rinnova la terra (almeno metà, con compost e concime) oppure scambia con vasi di un'altra famiglia.`
+        : `Nel ${d.getFullYear()} qui c'era ${altro.nome.toLowerCase()} (${FAMIGLIE[o.fam].toLowerCase()}): meglio aspettare ${ANNI_ROTAZIONE} anni prima di rimettere la stessa famiglia.`);
     }
   }
   return [...new Set(avvisi)];
@@ -1554,7 +1556,8 @@ function chiudiImpianto(i) {
 // Dosi di fondo in kg per m², secondo l'esigenza dell'ortaggio che verrà.
 // -----------------------------------------------------------------------------
 const CONCIMI = [
-  { id: "pollina", nome: "Pollina pellettata (tipo Biorex)", dose: { alta: 0.2, media: 0.15, bassa: 0.08 } },
+  // Pollina: dosi dall'etichetta di Fruttorto Italpollina (NPK 4-4-4, orticole 200–300 g/m²), il concime preferito dell'utente.
+  { id: "pollina", nome: "Pollina pellettata (Fruttorto / Biorex)", dose: { alta: 0.3, media: 0.25, bassa: 0.15 } },
   { id: "stallatico", nome: "Stallatico pellettato", dose: { alta: 0.4, media: 0.3, bassa: 0.15 } },
   { id: "letame", nome: "Letame maturo (sfuso)", dose: { alta: 4, media: 3, bassa: 1.5 } },
 ];
@@ -1816,6 +1819,75 @@ function promemoriaAgrumi() {
     testo: "Le gelate sono finite: riportali all'aperto, i primi giorni all'ombra, poi al sole. È il momento del rinvaso (ogni 2–3 anni) e del concime per agrumi." }];
   return [];
 }
+// Vasi con la stessa coltura («Rinnova i vasi con la stessa coltura», in «Da fare»).
+// Fragole: rinnovo di terra e piante ogni anno (in piena terra ogni 3 anni);
+// rifiorenti («4 stagioni», «rifiorente») dal 15 febbraio al 15 aprile, prima
+// che riprendano a vegetare; le altre dal 10 agosto al 30 settembre.
+// Altri ortaggi in un'aiuola con le caselle a vasi (basilico, peperoncino…): se
+// c'erano l'anno scorso (o sono ancora lì), da 3 settimane prima dell'inizio
+// del trapianto a un mese dopo: terra da rinnovare, o vasi da scambiare con
+// un'altra famiglia. ✅ Fatto = evento lavoro con vasi: <ortaggio> e l'aiuola.
+// Concime per vaso: pollina circa 3 g per litro di terra (stallatico il doppio);
+// litri stimati dalle misure del vaso, se ci sono (profondità ≈ 0.85 × lato).
+function concimeVaso(a) {
+  const L = Number(a?.vasoL) || 0, P = Number(a?.vasoP) || L;
+  const litri = L ? Math.round((formaVasiCaselle(a) === "tondo" ? Math.PI * (L / 2) ** 2 : L * P) * Math.min(L, P) * 0.85 * 1000) : 0;
+  return litri ? `pollina pellettata (Fruttorto) circa ${Math.round(litri * 3 / 5) * 5 || 5} g per vaso (vaso da circa ${litri} litri: 3 g per litro), oppure stallatico pellettato il doppio`
+    : "pollina pellettata (Fruttorto) circa 3 g per litro di terra (una manciata, 30 g, per un vaso da 10 litri), oppure stallatico pellettato il doppio";
+}
+const RIFIORENTE = /4 stagioni|quattro stagioni|rifior/i;
+function finestraFragole(i) {
+  const ora = oggi(), y = ora.getFullYear();
+  return RIFIORENTE.test(i.varieta || "") ? { da: daISO(`${y}-02-15`), a: daISO(`${y}-04-15`), quando: "a fine inverno, prima che riprendano a vegetare" }
+    : { da: daISO(`${y}-08-10`), a: daISO(`${y}-09-30`), quando: "dopo la raccolta, entro settembre, così radicano prima dell'inverno" };
+}
+const fattoVasi = (aiuolaId, ortaggioId, daData) => S.eventi.some((e) => e.vasi === ortaggioId && e.aiuolaId === aiuolaId && e.data >= aISO(daData));
+function promemoriaVasi() {
+  const ora = oggi(), y = ora.getFullYear(), voci = [];
+  const titolo = (o) => `Rinnova i vasi con la stessa coltura · ${o.nome.split(" (")[0].toLowerCase()}`;
+  // Fragole
+  for (const i of S.impianti) {
+    if (i.finito || i.ortaggioId !== "fragola" || aiuola(i.aiuolaId)?.semenzaio) continue;
+    const a = aiuola(i.aiuolaId), vasi = Boolean(formaVasiCaselle(a));
+    const f = finestraFragole(i);
+    if (ora < piuGiorni(f.da, -7) || ora > f.a || daISO(i.data) > piuGiorni(f.da, -30)) continue;
+    if (!vasi) { // piena terra: ogni 3 anni
+      const anni = y - daISO(i.data).getFullYear();
+      const ultimo = S.eventi.filter((e) => e.vasi === "fragola" && e.aiuolaId === i.aiuolaId).map((e) => e.data).sort().pop();
+      if (anni < 3 || (ultimo && y - daISO(ultimo).getFullYear() < 3)) continue;
+    }
+    if (fattoVasi(i.aiuolaId, "fragola", piuGiorni(f.da, -7)) || voci.some((v) => v.aiuolaId === i.aiuolaId && v.vasi === "fragola")) continue;
+    const nv = i.celle?.length || 0, n = Number(i.quantita) || 0;
+    const perVaso = nv && n ? Math.round(n / nv) : 0;
+    const testo = vasi
+      ? `${f.quando[0].toUpperCase() + f.quando.slice(1)}. 1) Togli le piante dai vasi${nv ? ` (${nv})` : ""} e tienile all'ombra con le radici coperte. 2) Svuota tutta la terra in un mucchio e togli radici vecchie e sassi. 3) Aggiungi circa 1 parte di compost maturo ogni 3–4 di terra (20–25%) e il concime: ${concimeVaso(a)}; mescola bene. 4) Riempi i vasi, bagna e stendi il telo di pacciamatura con i fori${perVaso ? ` (${perVaso} per vaso)` : ""}. 5) Rimetti le piantine migliori: giovani, con il cuore verde e radici chiare; scarta quelle con il colletto legnoso e scuro, di 3 anni o più. Taglia le foglie secche, non interrare il cuore. 6) Annaffia.${n ? ` Ne servono ${n}: compra le mancanti (o usa gli stoloni radicati dell'estate).` : ""}`
+      : `${f.quando[0].toUpperCase() + f.quando.slice(1)}. Dopo 3 anni le piante producono poco: rifai l'impianto in un'altra aiuola (non dopo pomodori o patate) con gli stoloni radicati o piante nuove, e interra letame maturo o compost.`;
+    voci.push({ data: ora, vasi: "fragola", aiuolaId: i.aiuolaId, ico: "🍓", dove: nomeAiuolaId(i.aiuolaId),
+      titolo: vasi ? titolo(PER_ID.fragola) : "Rinnova l'impianto di fragole", testo });
+  }
+  // Altri ortaggi in vaso: cosa c'era l'anno scorso (o c'è ancora) in ogni aiuola a vasi
+  const inVaso = S.impianti.filter((i) => i.ortaggioId !== "fragola" && formaVasiCaselle(aiuola(i.aiuolaId)) && !aiuola(i.aiuolaId)?.semenzaio
+    && PER_ID[i.ortaggioId] && !PERENNI.has(i.ortaggioId) && (i.data.startsWith(String(y - 1)) || (!i.finito && i.data < `${y}`)));
+  const famInVaso = new Map(inVaso.map((i) => [i.ortaggioId, PER_ID[i.ortaggioId]]));
+  const gruppi = new Map();
+  for (const i of inVaso) { const k = `${i.aiuolaId}|${i.ortaggioId}`; if (!gruppi.has(k)) gruppi.set(k, []); gruppi.get(k).push(i); }
+  for (const [k, imps] of gruppi) {
+    const [aiuolaId, id] = k.split("|"), o = PER_ID[id];
+    const w = [...finestreAnno(o, "tra", y), ...finestreAnno(o, "dir", y)].sort((p, q) => p.inizio - q.inizio)[0];
+    if (!w || ora < piuGiorni(w.inizio, -21) || ora > piuGiorni(w.inizio, 30)) continue;
+    if (fattoVasi(aiuolaId, id, piuGiorni(w.inizio, -21))) continue;
+    // Già rimesso quest'anno in quei vasi? Allora non serve più ricordarlo.
+    if (S.impianti.some((i) => i.ortaggioId === id && i.aiuolaId === aiuolaId && i.data.startsWith(String(y)) && daISO(i.data) <= ora)) continue;
+    const celle = new Set(imps.flatMap((i) => i.celle || []));
+    const vivo = imps.some((i) => !i.finito);
+    const altri = [...famInVaso.values()].filter((x) => x.fam !== o.fam).map((x) => x.nome.split(" (")[0].toLowerCase());
+    const testo = `Prima di rimettere ${o.nome.toLowerCase()} negli stessi vasi${celle.size ? ` (${celle.size})` : ""}: svuota la terra (almeno la metà di sopra, meglio tutta), togli le radici vecchie, mescola 1 parte di compost maturo ogni 3–4 di terra e ${concimeVaso(aiuola(aiuolaId))}, riempi e bagna. La stessa coltura nello stesso vaso va bene se rinnovi la terra.`
+      + (altri.length ? ` Se vuoi, scambia qualche vaso con ${altri.join(", ")} (un'altra famiglia): nei vasi scambiati basta rimescolare la terra con un po' di compost; quelli che restano con la stessa coltura vanno rinnovati.` : "")
+      + (vivo ? ` Se ${o.nome.split(" (")[0].toLowerCase()} ha passato l'inverno, rinvasalo con terra nuova e accorcia i rami di un terzo.` : "");
+    voci.push({ data: ora, vasi: id, aiuolaId, ico: icona(o), dove: nomeAiuolaId(aiuolaId), titolo: titolo(o), testo });
+  }
+  return voci;
+}
 function attivitaInProgramma(giorni) {
   const ora = oggi(), fino = piuGiorni(ora, giorni);
   const voci = [];
@@ -1889,14 +1961,14 @@ function vistaOggi() {
     ? `<p class="tenue">Imposta la posizione dell'orto nella scheda <a href="#luogo">Luogo</a> per vedere le previsioni e il rischio di brinate.</p>`
     : `<div id="box-meteo"><p class="tenue">Carico le previsioni…</p></div>`;
 
-  const programma = [...promemoriaAgrumi(), ...attivitaInProgramma(ANTICIPO_PROMEMORIA)];
+  const programma = [...promemoriaAgrumi(), ...promemoriaVasi(), ...attivitaInProgramma(ANTICIPO_PROMEMORIA)];
   const htmlProgramma = programma.length ? `<section class="carta promemoria">
       <h2 style="margin-top:0">🔔 Da fare nei prossimi ${ANTICIPO_PROMEMORIA} giorni</h2>
       <ul class="elenco">${programma.map((v) => `<li><div class="riga">
         <span><b>${v.ico ? v.ico + " " : ""}${esc(v.titolo)}</b> <span class="tenue">· ${quandoTesto(v.data)}</span>
           ${v.dove || v.testo ? `<br><span class="tenue piccolo">${esc([v.dove, v.testo].filter(Boolean).join(" · "))}</span>` : ""}</span>
         <span style="white-space:nowrap">
-          ${v.agrumi ? `<button class="piccolo" data-agrumi="${v.agrumi}">✅ Fatto</button>` : `<button class="piccolo secondario" ${v.tipo === "ev" ? `data-modifica-ev="${v.id}"` : `data-modifica-imp="${v.id}"`}>✏️</button>`}
+          ${v.agrumi ? `<button class="piccolo" data-agrumi="${v.agrumi}">✅ Fatto</button>` : v.vasi ? `<button class="piccolo" data-vasi="${v.vasi}" data-aiuola="${v.aiuolaId}">✅ Fatto</button>` : `<button class="piccolo secondario" ${v.tipo === "ev" ? `data-modifica-ev="${v.id}"` : `data-modifica-imp="${v.id}"`}>✏️</button>`}
           <a class="bottone secondario piccolo" style="min-height:34px;padding:4px 10px" target="_blank" rel="noopener" href="${esc(linkGoogleCalendar(v.titolo, v.data, [v.dove, v.testo].filter(Boolean).join(" · ")))}" title="Aggiungi al calendario">📅</a>
         </span></div></li>`).join("")}</ul>
     </section>` : "";
@@ -3211,6 +3283,12 @@ function collega(root) {
   const su = (sel, fn) => root.querySelectorAll(sel).forEach((b) => b.addEventListener("click", (e) => { e.preventDefault(); fn(b, e); }));
   const imp = (id) => S.impianti.find((i) => i.id === id);
   su("[data-ortaggio]", (b) => schedaOrtaggio(b.dataset.ortaggio));
+  su("[data-vasi]", (b) => {
+    const o = PER_ID[b.dataset.vasi];
+    S.eventi.push({ id: nuovoId(), tipo: "lavoro", data: aISO(oggi()), aiuolaId: b.dataset.aiuola, impiantoId: "", kg: null, vasi: b.dataset.vasi,
+      testo: `Vasi rinnovati (${o.nome.split(" (")[0].toLowerCase()}): terra rimescolata con compost e concime` });
+    salva_e_ridisegna();
+  });
   su("[data-agrumi]", (b) => {
     const riparo = b.dataset.agrumi === "riparo";
     S.eventi.push({ id: nuovoId(), tipo: "lavoro", data: aISO(oggi()), aiuolaId: "", impiantoId: "", kg: null, agrumi: b.dataset.agrumi,
