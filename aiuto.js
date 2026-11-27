@@ -76,7 +76,7 @@ const GUIDA = [
   ] },
   { ico: "💾", titolo: "Non perdere i dati", righe: [
     "I dati stanno solo su questo telefono.",
-    "Ogni volta che apri l'app, se l'orto è cambiato, l'app ne tiene una <b>🕘 copia automatica</b> sul telefono (le ultime 20). Hai cancellato qualcosa per sbaglio? In 📍 Luogo tocca <b>🕘 Copie automatiche</b> e <b>↩️ Ripristina</b> quella giusta.",
+    "Ogni volta che apri l'app, se l'orto è cambiato, l'app ne tiene una <b>🕘 copia automatica</b> sul telefono (le ultime 20). Hai cancellato qualcosa per sbaglio? In 📍 Luogo tocca <b>🕘 Copie automatiche</b> e <b>↩️ Ripristina</b> quella giusta; <b>🗑️</b> elimina una copia che non ti serve.",
     "Le copie automatiche però stanno sul telefono: ogni tanto, in 📍 Luogo, tocca <b>📤 Invia copia</b> e mandala a te stesso (WhatsApp o email). Se non lo fai da un mese, ☀️ Oggi te lo ricorda.",
     "Telefono nuovo? <b>📂 Ripristina da file</b> e scegli la copia.",
     "Compare <b>🔄 C'è una versione nuova</b>? Toccalo: l'app si aggiorna. Il numero della versione è in fondo a questa pagina ❓.",

@@ -608,7 +608,7 @@ function cambiaScacchiera(a, nuova) {
   }
 }
 // Scacchiera piccola di sola lettura: celleIcone = { a1: "🍅", … }.
-function htmlMiniScacchiera(g, manca, celleIcone) {
+function htmlScacchieraComEra(g, manca, celleIcone) {
   let h = `<div class="scorri-scacchiera">${intestazioneGriglia(g).replace('class="scacchiera', 'class="scacchiera mini')}`;
   for (let r = 0; r < g.righe; r++) {
     h += `<span class="intest riga">${nomeRiga(r)}</span>`;
@@ -629,7 +629,7 @@ function htmlComEra(a, imps) {
     for (const c of i.celle) gruppi.get(k).ic[c] = (gruppi.get(k).ic[c] || "") + icona(PER_ID[i.ortaggioId]);
   }
   const ora = grigliaAiuola(a);
-  return [...gruppi.values()].map(({ g, manca, ic }) => `<div class="com-era"><p class="tenue piccolo" style="margin:4px 0 0">Scacchiera ${g.righe} × ${g.colonne}${stessaGriglia(g, ora) ? "" : " (com'era allora)"}</p>${htmlMiniScacchiera(g, manca, ic)}</div>`).join("");
+  return [...gruppi.values()].map(({ g, manca, ic }) => `<div class="com-era"><p class="tenue piccolo" style="margin:4px 0 0">Scacchiera ${g.righe} × ${g.colonne}${stessaGriglia(g, ora) ? "" : " (com'era allora)"}</p>${htmlScacchieraComEra(g, manca, ic)}</div>`).join("");
 }
 function moduloCelleMancanti(a) {
   const g = grigliaAiuola(a);
@@ -3243,6 +3243,15 @@ async function copieAutomatiche() {
     q.onerror = () => ko(q.error);
   });
 }
+async function eliminaCopiaAutomatica(id) {
+  const db = await apriDbCopie();
+  return new Promise((ok, ko) => {
+    const t = db.transaction("copie", "readwrite");
+    t.objectStore("copie").delete(id);
+    t.oncomplete = () => ok();
+    t.onerror = () => ko(t.error);
+  });
+}
 async function copiaAutomatica() {
   if (IN_PROVA || !window.indexedDB) return;
   if (S.aiuole.filter((a) => !a.semenzaio).length === 0 && !S.impianti.length) return; // orto ancora vuoto
@@ -3261,18 +3270,25 @@ async function copiaAutomatica() {
 }
 async function finestraCopieAutomatiche() {
   const copie = await copieAutomatiche().catch(() => []);
-  const ora = (iso) => { const d = new Date(iso); return `${fmtLungo(d)} ${d.getFullYear()}, ore ${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`; };
+  const ora = (iso) => { const d = new Date(iso); return `${fmtLungo(d)}, ore ${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`; };
   apriFinestra(`<h2>🕘 Copie automatiche</h2>
     <p class="tenue piccolo">Ogni volta che apri l'app, se l'orto è cambiato, l'app ne tiene una copia qui sul telefono (le ultime ${MAX_COPIE}). Servono se cancelli o cambi qualcosa per sbaglio. Se perdi o cambi telefono spariscono anche loro: per quello c'è «📤 Invia copia».</p>
     ${copie.length ? `<ul class="elenco">${copie.map((c, k) => `<li><div class="riga" style="display:flex;justify-content:space-between;gap:8px;align-items:center">
       <span><b>${ora(c.quando)}</b>${k === 0 ? " <span class=\"chip\">la più recente</span>" : ""}<br><span class="tenue piccolo">${esc(c.riassunto || "")}</span></span>
       <span style="white-space:nowrap"><button class="piccolo" data-ripristina-copia="${c.id}">↩️ Ripristina</button>
-      <button class="piccolo secondario" data-scarica-copia="${c.id}" title="Scarica il file">💾</button></span></div></li>`).join("")}</ul>`
+      <button class="piccolo secondario" data-scarica-copia="${c.id}" title="Scarica il file">💾</button>
+      <button class="piccolo secondario" data-elimina-copia="${c.id}" title="Elimina questa copia">🗑️</button></span></div></li>`).join("")}</ul>`
       : `<p>Ancora nessuna copia: la prima arriva la prossima volta che apri l'app.</p>`}
     <div class="riga-bottoni"><button class="secondario" data-chiudi>Chiudi</button></div>`, (f) => {
     f.querySelectorAll("[data-scarica-copia]").forEach((b) => b.addEventListener("click", () => {
       const c = copie.find((x) => x.id === Number(b.dataset.scaricaCopia));
       if (c) scaricaFile(`orto-copia-${c.quando.slice(0, 10)}.json`, JSON.stringify(JSON.parse(c.testo), null, 1), "application/json");
+    }));
+    f.querySelectorAll("[data-elimina-copia]").forEach((b) => b.addEventListener("click", async () => {
+      const c = copie.find((x) => x.id === Number(b.dataset.eliminaCopia));
+      if (!c || !confirm(`Eliminare la copia del ${ora(c.quando)} (${c.riassunto})?`)) return;
+      try { await eliminaCopiaAutomatica(c.id); } catch (e) { alert("Non riesco a eliminarla: " + e.message); return; }
+      finestraCopieAutomatiche();
     }));
     f.querySelectorAll("[data-ripristina-copia]").forEach((b) => b.addEventListener("click", async () => {
       const c = copie.find((x) => x.id === Number(b.dataset.ripristinaCopia));
