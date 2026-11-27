@@ -314,6 +314,9 @@ svg.pianta a { cursor: pointer; }
 .legenda i.l-porta { background: #8a4b1c; }
 .p-serra { fill: rgba(170, 215, 235, 0.45); stroke: #6aa9c4; stroke-width: 0.04; pointer-events: none; }
 /* Mappa dentro un modulo (scegli l'aiuola toccandola) */
+/* Parti di un'aiuola divisa: bordo sottile e lettera in alto */
+.p-aiuola.p-parte { stroke-width: 0.015; }
+.p-lettera { font-weight: 700; fill: #3b2a14; paint-order: stroke; stroke: rgba(255, 255, 255, 0.8); stroke-width: 0.04; }
 .mappa-scelta { margin-top: 6px; }
 .mappa-scelta summary { cursor: pointer; color: var(--tenue); font-size: 0.9em; }
 .mappa-scelta .mappa-zona { margin-top: 6px; }

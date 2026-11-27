@@ -18,6 +18,7 @@ const GUIDA = [
     "Scrivi il numero (da sinistra a destra) e le misure in metri.",
     "Vuoi dividerla in quadretti? Metti righe e colonne: è la <b>scacchiera</b>.",
     "Aiuole su più file, una davanti all'altra? In ✏️ Modifica aiuola scegli <b>In quale fila sta</b> (dietro = verso il fondo, davanti = verso di te) e scrivi a quanti metri dal bordo sinistro comincia.",
+    "Nella stessa aiuola (o sotto la stessa serra) due ortaggi con distanze diverse, come aglio a 21 per fila e cipolle a 14? Apri l'aiuola e tocca <b>✂️ Dividi in parti</b>: per ogni parte scrivi nome, larghezza e scacchiera. Le colture che c'erano vanno nella parte che scegli. Sulla mappa resta un'aiuola sola, con una serra e una porta; le parti si chiamano 5a, 5b…",
     "Qualche quadretto non c'è davvero (vasi a piramide)? Sotto la scacchiera tocca <b>✕ Caselle che non esistono</b>.",
     "Ogni quadretto è un vaso? In ✏️ Modifica aiuola in <b>🏺 Le caselle sono vasi?</b> scegli tondi, quadrati o rettangolari e scrivi le misure di un vaso: sulla mappa vedi i vasi a piramide, e la storia dell'aiuola resta.",
     "Un'aiuola dove metti sempre la stessa pianta (la zucca sul tetto)? In ✏️ Modifica aiuola scegli <b>Sempre lo stesso ortaggio</b> 📌.",
@@ -34,7 +35,7 @@ const GUIDA = [
   { ico: "🌱", titolo: "Seminare e piantare", righe: [
     "Apri l'aiuola e tocca <b>＋ Nuova coltura</b>, oppure tocca un quadretto vuoto della scacchiera.",
     "Scegli l'ortaggio: l'app ti dice la <b>prima data utile</b>.",
-    "Copri con il <b>tessuto non tessuto</b>? Scegli 🧣 in <b>Protezione all'inizio</b>: puoi seminare circa 2 settimane prima.",
+    "Copri con il <b>tessuto non tessuto</b>? Scegli 🧣 in <b>Protezione all'inizio</b>: puoi seminare circa 2 settimane prima. Con una <b>⛺ miniserra</b> sugli archetti scegli se è <b>in TNT</b> (circa 2 settimane, non va mai aperta) o <b>in PVC trasparente</b> (circa 3 settimane): in ☀️ Oggi l'app ti ricorda di aprirla nelle giornate di sole e di annaffiare, perché la pioggia non entra.",
     "Semi in casa o in vasetti? Mettili nel 🪴 <b>Semenzaio</b> con <b>＋ Nuova semina</b>. Quando sono grandi tocca <b>Trapianta</b> e tocca l'aiuola sulla <b>🗺️ mappa</b>: vedi cosa c'è già dentro, quella scelta diventa gialla.",
     "Piantine comprate al vivaio? Nel 🪴 Semenzaio tocca <b>🛒 Piantine comprate</b>: vasetti, piantine per vasetto, prezzo, marca, negozio. Poi <b>Trapianta</b>. Nel 📓 Diario vedi quante ne hai comprate e quanto hai speso.",
     "Ne trapianti solo una parte? In «Quante piantine trapianti» scrivi il numero: le altre restano nel semenzaio, e le trapianti dopo, anche in un'altra aiuola.",

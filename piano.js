@@ -46,7 +46,8 @@ function aiuoleVere() { return aiuoleOrdinate().filter(coltivabile); }
 // spostare qualcosa: almeno una serra e almeno un posto libero).
 function giriSerre(anno) {
   const perZona = new Map();
-  for (const a of aiuoleVere().filter((x) => x.giroSerra)) {
+  // Anche le aiuole divise in parti: la serra copre l'aiuola grande.
+  for (const a of aiuoleOrdinate().filter((x) => x.giroSerra && !x.semenzaio && !x.capanno && !x.dentro)) {
     const z = a.zona || ZONA_PREDEFINITA;
     if (!perZona.has(z)) perZona.set(z, []);
     perZona.get(z).push(a);
@@ -74,7 +75,7 @@ function proponiSerre(anno) {
 }
 // La serra di un'aiuola nell'anno del piano (bozza compresa).
 function serraNelPiano(a, P) {
-  const v = P?.serre?.[a.id];
+  const v = P?.serre?.[(padreDi(a) || a).id];
   return v == null ? serraNel(a, P?.anno ?? annoPiano()) : v;
 }
 function areaMediana() {
@@ -211,6 +212,11 @@ function storiaAiuole(anno) {
     if (!a || a.semenzaio || !o) continue;
     const y = Number(i.data.slice(0, 4));
     if (y >= anno || anno - y > 2) continue;
+    // Aiuola grande poi divisa: la sua storia vale per ogni parte (senza caselle).
+    for (const b of partiDi(a)) {
+      const vecchia = i.data < terraCambiata(b.id, `${anno}-12-31`);
+      (st[b.id] ??= []).push({ vecchia, distanza: anno - y, anno: y, fam: o.fam, ortaggioId: o.id, esig: o.esig, fr: 1, celle: null });
+    }
     // Terra cambiata dopo questa coltura: per la rotazione non conta più.
     const vecchia = i.data < terraCambiata(a.id, `${anno}-12-31`);
     (st[a.id] ??= []).push({ vecchia, distanza: anno - y, anno: y, fam: o.fam, ortaggioId: o.id, esig: o.esig, fr: frazione(i, a), celle: i.celle?.length ? new Set(celleValide(a, i.celle)) : null });
@@ -702,7 +708,7 @@ function htmlRestano(anno) {
 function htmlListaPiano(P) {
   const righe = P.lista.filter((v) => PER_ID[v.ortaggioId]).map((v) => `<li><div class="riga">
       <span><b>${nomeOrtaggio(v.ortaggioId)}</b>${v.varieta ? ` <span class="tenue">${esc(v.varieta)}</span>` : ""}
-        <br><span class="tenue piccolo">${esc(testoDate(v))}${v.origine && aiuola(v.origine) ? ` · nel ${P.anno - 1} in ${esc(nomeAiuolaId(v.origine))}` : " · aggiunto"}${v.serra ? " · serra" : ""}${v.protezione === "tnt" ? " · 🧣 TNT" : ""}</span></span>
+        <br><span class="tenue piccolo">${esc(testoDate(v))}${v.origine && aiuola(v.origine) ? ` · nel ${P.anno - 1} in ${esc(nomeAiuolaId(v.origine))}` : " · aggiunto"}${v.serra ? " · serra" : ""}${PROTEZIONE_BREVE[v.protezione] ? ` · ${PROTEZIONE_BREVE[v.protezione]}` : ""}</span></span>
       <span style="white-space:nowrap;display:flex;align-items:center;gap:4px">
         <input type="number" min="0.1" step="0.5" value="${String(v.area)}" data-piano-area="${v.k}" style="width:5.2em" aria-label="Spazio in metri quadri"> m²
         <button class="piccolo secondario" data-piano-togli="${v.k}" title="Togli">✕</button>
@@ -892,7 +898,7 @@ function accettaPiano() {
       testo: `Dal piano ${P.anno}, prima di ${[...new Set(presto.map((v) => PER_ID[v.ortaggioId].nome.toLowerCase()))].join(", ")}: ${dosi}${a.larghezza ? "" : " (dose per un'aiuola media: metti le misure per averla giusta)"}.` });
   }
   const anno = P.anno;
-  for (const a of aiuoleVere()) {
+  for (const a of S.aiuole) {
     if (P.serre?.[a.id] == null) continue;
     a.serraAnni ??= {};
     a.serraAnni[String(anno - 1)] ??= serraNel(a, anno - 1); // la storia resta giusta

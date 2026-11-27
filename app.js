@@ -116,6 +116,7 @@ function carica() {
       if (!s.zone || typeof s.zone !== "object") s.zone = {};
       migraAiuole(s.aiuole);
       allineaSerre(s.aiuole);
+      allineaParti(s.aiuole);
       return s;
     }
   } catch (e) {
@@ -148,6 +149,7 @@ function migraAiuole(aiuole) {
 let S = carica();
 
 function salva() {
+  allineaParti(S.aiuole);
   try {
     localStorage.setItem(CHIAVE, JSON.stringify(S));
   } catch (e) {
@@ -243,6 +245,26 @@ function nomeOrtaggioTesto(id) {
   return o ? `${o.emoji} ${o.nome}` : id;
 }
 function aiuola(id) { return S.aiuole.find((a) => a.id === id); }
+// Aiuola divisa in parti (es. una serra con aglio e cipolle, ognuna con la sua
+// scacchiera): le parti sono aiuole vere con dentro = id dell'aiuola grande e
+// parte = "a", "b"… L'aiuola grande resta per la pianta, la serra e la porta, ma
+// non si coltiva più (la sua storia vale per tutte le parti). a.divisa = "lato"
+// (parti affiancate da sinistra a destra) o "fondo" (una dietro l'altra).
+function partiDi(a) { return a ? S.aiuole.filter((x) => x.dentro === a.id).sort((p, q) => (p.parte || "").localeCompare(q.parte || "")) : []; }
+function padreDi(a) { return a?.dentro ? aiuola(a.dentro) : null; }
+// Stesso pezzo di terra: l'aiuola stessa o l'aiuola grande di cui è una parte.
+function stessoTerreno(idX, aiuolaId) { return idX === aiuolaId || (Boolean(idX) && idX === aiuola(aiuolaId)?.dentro); }
+// Le parti prendono dall'aiuola grande zona, numero, fila e serra.
+function allineaParti(aiuole) {
+  for (const c of aiuole) {
+    if (!c.dentro) continue;
+    const p = aiuole.find((x) => x.id === c.dentro);
+    if (!p) { delete c.dentro; delete c.parte; continue; }
+    Object.assign(c, { zona: p.zona, numero: p.numero, fila: p.fila, inizio: null, copertura: p.copertura, giroSerra: false, porta: "", capanno: false, vaso: "" });
+    if (p.serraAnni) c.serraAnni = { ...p.serraAnni }; else delete c.serraAnni;
+    if (p.divisa === "fondo") c.larghezza = p.larghezza; else c.lunghezza = p.lunghezza;
+  }
+}
 const COPERTURE = { "": "All'aperto", serra: "In serra o tunnel" };
 const PACCIAMATURE = { "": "Terra nuda", telo: "Telo di pacciamatura", organica: "Paglia, foglie o erba" };
 const ANTICIPO_SERRA = 21; // giorni: in serra si semina prima e si raccoglie più a lungo
@@ -285,20 +307,29 @@ function mqAiuola(a) {
 function iconaAiuola(a, serra = a.copertura === "serra") {
   return a.semenzaio ? "🪴" : a.capanno ? "" : serra ? "🏠" : a.vaso ? "🏺" : "🟫";
 }
-function coltivabile(a) { return Boolean(a) && !a.semenzaio && !a.capanno; }
+function coltivabile(a) { return Boolean(a) && !a.semenzaio && !a.capanno && !S.aiuole.some((x) => x.dentro === a.id); }
 function inSerra(aiuolaId, anno) { return serraNel(aiuola(aiuolaId), anno ?? oggi().getFullYear()); }
-// Protezione di una singola coltura (si mette e si toglie): il tessuto non tessuto
-// tiene 2–3 °C in più e ripara dalle brinate leggere, circa 2 settimane di vantaggio.
-const PROTEZIONI = { "": "Nessuna", tnt: "Tessuto non tessuto (TNT)" };
-const ANTICIPO_TNT = 14;
+// Protezione di una singola coltura (si mette e si toglie). Il tessuto non tessuto
+// (appoggiato o su archetti) tiene 2–3 °C in più e ripara dalle brinate leggere:
+// circa 2 settimane di vantaggio. La miniserra (tunnel basso) in PVC trasparente scalda di
+// più di giorno (effetto serra): circa 3 settimane, ma va aperto col sole e annaffiato.
+const PROTEZIONI = { "": "Nessuna", tnt: "🧣 TNT (tessuto non tessuto appoggiato)", tunnelTnt: "⛺ Miniserra in TNT (su archetti)", tunnelTelo: "⛺ Miniserra in PVC trasparente (su archetti)" };
+const ANTICIPI_PROTEZIONE = { tnt: 14, tunnelTnt: 14, tunnelTelo: 21 };
+const PROTEZIONE_BREVE = { tnt: "🧣 TNT", tunnelTnt: "⛺ miniserra in TNT", tunnelTelo: "⛺ miniserra in PVC" };
+const VANTAGGIO_PROTEZIONE = { tnt: "del tessuto non tessuto", tunnelTnt: "della miniserra in TNT", tunnelTelo: "della miniserra in PVC" };
 function anticipo(aiuolaId, protezione, anno) {
-  return (inSerra(aiuolaId, anno) ? ANTICIPO_SERRA : 0) + (protezione === "tnt" ? ANTICIPO_TNT : 0);
+  return (inSerra(aiuolaId, anno) ? ANTICIPO_SERRA : 0) + (ANTICIPI_PROTEZIONE[protezione] || 0);
 }
 function testoVantaggio(aiuolaId, protezione, anno) {
-  const v = [inSerra(aiuolaId, anno) ? "della serra" : "", protezione === "tnt" ? "del tessuto non tessuto" : ""].filter(Boolean);
+  const v = [inSerra(aiuolaId, anno) ? "della serra" : "", VANTAGGIO_PROTEZIONE[protezione] || ""].filter(Boolean);
   return v.length ? ` (contando il vantaggio ${v.join(" e ")})` : "";
 }
 const CONSIGLIO_TNT = "🧣 Tessuto non tessuto: stendilo appena seminato o trapiantato, appoggiato sulle piante o su archetti, coi bordi fermati da terra o sassi. Si annaffia anche attraverso. Nelle giornate calde (sopra 20 °C) aprilo, e toglilo quando le minime restano sopra 8–10 °C o quando la pianta fiorisce (servono gli insetti).";
+const CONSIGLI_PROTEZIONE = {
+  tnt: CONSIGLIO_TNT,
+  tunnelTnt: "⛺ Miniserra in TNT: archetti ogni 70–100 cm, il tessuto sopra coi bordi interrati o fermati da sassi. Come il TNT appoggiato (2–3 °C in più, ripara dalle brinate leggere fino a −3/−4 °C), ma non schiaccia le foglie e le piante hanno più aria. Pioggia e aria passano: non va aperto. Col gelo forte metti due strati.",
+  tunnelTelo: "⛺ Miniserra in PVC trasparente: di giorno col sole dentro fa molto più caldo che fuori (anche 10–15 °C in più), di notte tiene solo 1–3 °C. Nelle giornate di sole sopra 12–15 °C apri le testate o solleva un lato, e richiudi nel pomeriggio: il caldo e la condensa fanno marcire lattughe e finocchi (muffa grigia, peronospora). La pioggia non entra: annaffia. Toglilo quando le minime restano sopra 8–10 °C.",
+};
 // Fila dell'aiuola nella pianta: 0 = principale, positivi dietro (verso il fondo), negativi davanti.
 function filaAiuola(a) {
   if (a.fila === "dietro") return 1; // versione precedente: una sola fila dietro
@@ -314,6 +345,8 @@ function corridoioZona(zona) {
   return c == null ? CORRIDOIO : c;
 }
 function tipoAiuola(a) {
+  if (padreDi(a)) return [`parte ${a.parte} di ${nomeAiuola(padreDi(a)).toLowerCase()}`, a.copertura === "serra" ? "in serra" : "", a.pacciamatura ? PACCIAMATURE[a.pacciamatura].toLowerCase() : ""].filter(Boolean).join(" · ");
+  if (partiDi(a).length) return [`divisa in ${partiDi(a).length} parti`, a.copertura === "serra" ? "in serra" : "", a.porta && (a.copertura === "serra") ? `porta ${PORTE[a.porta].split(" (")[0].toLowerCase()}` : "", a.giroSerra ? "🔁 giro delle serre spostabili" : ""].filter(Boolean).join(" · ");
   if (a.capanno) return `${a.copertura === "serra" ? "serra usata come capanno degli attrezzi" : "capanno degli attrezzi"}${PORTE[a.porta] && a.porta ? `, porta ${PORTE[a.porta].split(" (")[0].toLowerCase()}` : ""}, non si coltiva`;
   return [a.copertura === "serra" && a.porta ? `porta ${PORTE[a.porta].split(" (")[0].toLowerCase()}` : "", a.copertura === "serra" ? "in serra" : "", a.giroSerra ? "🔁 giro delle serre spostabili" : "", a.pacciamatura ? PACCIAMATURE[a.pacciamatura].toLowerCase() : ""].filter(Boolean).join(" · ");
 }
@@ -325,7 +358,8 @@ function aiuoleOrdinate() {
   const z = zone();
   return [...S.aiuole].sort((x, y) => (y.semenzaio ? 1 : 0) - (x.semenzaio ? 1 : 0)
     || z.indexOf(x.zona || ZONA_PREDEFINITA) - z.indexOf(y.zona || ZONA_PREDEFINITA)
-    || (Number(x.numero) || 0) - (Number(y.numero) || 0));
+    || (Number(x.numero) || 0) - (Number(y.numero) || 0)
+    || (x.dentro ? 1 : 0) - (y.dentro ? 1 : 0) || (x.parte || "").localeCompare(y.parte || ""));
 }
 // Orto scelto coi bottoni in cima alla scheda Orto ("" = tutti).
 function zonaScelta() {
@@ -335,7 +369,8 @@ function zonaScelta() {
 function nomeAiuola(a) {
   if (!a) return "";
   if (a.semenzaio) return a.nome;
-  const base = a.capanno ? `🧰 ${a.nome || "Capanno"}` : a.vaso && !a.nome ? `${VASI[a.vaso] || "Vaso"} ${a.numero}` : a.nome ? `${a.numero} · ${a.nome}` : `Aiuola ${a.numero}`;
+const n = `${a.numero}${a.parte || ""}`;
+  const base = a.capanno ? `🧰 ${a.nome || "Capanno"}` : a.vaso && !a.nome ? `${VASI[a.vaso] || "Vaso"} ${n}` : a.nome ? `${n} · ${a.nome}` : `Aiuola ${n}`;
   return zone().length > 1 ? `${base} (${a.zona || ZONA_PREDEFINITA})` : base;
 }
 function nomeAiuolaId(id) { return nomeAiuola(aiuola(id)); }
@@ -425,7 +460,7 @@ function consiglioFissa(a) {
 // fino al giorno dato. Le colture messe prima non contano più per la rotazione.
 function terraCambiata(aiuolaId, finoAISO) {
   let t = "";
-  for (const e of S.eventi) if (e.tipo === "terra" && e.aiuolaId === aiuolaId && e.data <= finoAISO && e.data > t) t = e.data;
+  for (const e of S.eventi) if (e.tipo === "terra" && stessoTerreno(e.aiuolaId, aiuolaId) && e.data <= finoAISO && e.data > t) t = e.data;
   return t;
 }
 // Malattie del terreno ancora valide in quell'aiuola, per quella famiglia, alla data.
@@ -434,7 +469,7 @@ function famiglieMalattia(e) { return [...new Set([e.fam, ...(MALATTIE_TERRENO[e
 function anniMalattia(e) { return MALATTIE_TERRENO[e.malattia]?.anni ?? 5; }
 function malattieTerreno(aiuolaId, fam, dataISO) {
   const nuova = terraCambiata(aiuolaId, dataISO);
-  return S.eventi.filter((e) => e.tipo === "malattia" && e.aiuolaId === aiuolaId && e.data <= dataISO && !(nuova > e.data)
+  return S.eventi.filter((e) => e.tipo === "malattia" && stessoTerreno(e.aiuolaId, aiuolaId) && e.data <= dataISO && !(nuova > e.data)
     && Number(dataISO.slice(0, 4)) < Number(e.data.slice(0, 4)) + anniMalattia(e)
     && (!fam || famiglieMalattia(e).includes(fam)));
 }
@@ -453,11 +488,12 @@ function avvisiRotazione(aiuolaId, ortaggioId, dataISO, escludiId, celle) {
   const nuova = terraCambiata(aiuolaId, dataISO);
   const avvisi = [...malati];
   for (const i of S.impianti) {
-    if (i.id === escludiId || i.aiuolaId !== aiuolaId) continue;
+    if (i.id === escludiId || !stessoTerreno(i.aiuolaId, aiuolaId)) continue;
     if (nuova && i.data < nuova) continue; // c'era sulla terra di prima
     const altro = PER_ID[i.ortaggioId];
     if (!altro || altro.fam !== o.fam) continue;
-    if (celle?.length && i.celle?.length && !i.celle.some((c) => celle.includes(c))) continue;
+    // Le caselle contano solo nella stessa aiuola (l'aiuola grande ha un'altra scacchiera).
+    if (i.aiuolaId === aiuolaId && celle?.length && i.celle?.length && !i.celle.some((c) => celle.includes(c))) continue;
     const d = daISO(i.data);
     const anni = data.getFullYear() - d.getFullYear();
     if (anni >= 1 && anni < ANNI_ROTAZIONE) {
@@ -827,11 +863,11 @@ function opzioniOrtaggi() {
   return [["", "— scegli —"], ...elencoOrtaggi().map((o) => [o.id, `${preferito(o.id) ? "★ " : ""}${o.emoji} ${o.nome}`])];
 }
 function opzioniAiuole(conSemenzaio = true) {
-  return aiuoleOrdinate().filter((a) => !a.capanno && (conSemenzaio || !a.semenzaio)).map((a) => [a.id, nomeAiuola(a)]);
+  return aiuoleOrdinate().filter((a) => a.semenzaio ? conSemenzaio : coltivabile(a)).map((a) => [a.id, nomeAiuola(a)]);
 }
 
 function prossimoNumero(zona) {
-  return Math.max(0, ...S.aiuole.filter((x) => !x.semenzaio && (x.zona || ZONA_PREDEFINITA) === zona).map((x) => Number(x.numero) || 0)) + 1;
+  return Math.max(0, ...S.aiuole.filter((x) => !x.semenzaio && !x.dentro && (x.zona || ZONA_PREDEFINITA) === zona).map((x) => Number(x.numero) || 0)) + 1;
 }
 
 // Per mettere un'aiuola al numero n di una zona: le altre scalano di uno.
@@ -842,7 +878,7 @@ function spostamentiAiuole(zona, n, a) {
   const vecchio = a && (a.zona || ZONA_PREDEFINITA) === zona ? Number(a.numero) : null;
   const out = [];
   for (const x of S.aiuole) {
-    if (x === a || x.semenzaio || (x.zona || ZONA_PREDEFINITA) !== zona) continue;
+    if (x === a || x.semenzaio || x.dentro || (x.zona || ZONA_PREDEFINITA) !== zona) continue;
     const k = Number(x.numero);
     if (vecchio == null || Number.isNaN(vecchio)) { if (k >= n) out.push([x, k + 1]); }
     else if (n < vecchio && k >= n && k < vecchio) out.push([x, k + 1]);
@@ -914,9 +950,10 @@ function moduloAiuola(a) {
         : v.caselleVasi === "quadrato" ? "Lato di ogni vaso in metri (facoltativo)" : "Misure di ogni vaso: larghezza in metri (da sinistra a destra; facoltativa)";
       form.querySelector("#w_fissa").hidden = capanno;
       campiMisureVaso(form, v.cosa, false);
+      if (partiDi(a).length) for (const id of ["cosa", "righe", "colonne", "caselleVasi", "vasoL", "vasoP", "fissa", "pacciamatura"]) form.querySelector(`#w_${id}`).hidden = true;
       const wp = form.querySelector("#w_porta");
       if (wp) wp.hidden = !(capanno || v.copertura === "serra" || v.giroSerra);
-      const doppia = S.aiuole.find((x) => x !== a && !x.semenzaio && (x.zona || ZONA_PREDEFINITA) === v.zona && String(x.numero) === v.numero);
+      const doppia = S.aiuole.find((x) => x !== a && !x.semenzaio && !x.dentro && (x.zona || ZONA_PREDEFINITA) === v.zona && String(x.numero) === v.numero);
       form.querySelector("#w_faiPosto").hidden = !doppia;
       if (!doppia) return "";
       if (v.faiPosto) return `<div class="bene">Faccio posto in «${esc(v.zona)}»: ${esc(testoSpostamenti(spostamentiAiuole(v.zona, Number(v.numero), a)))}. Colture e diario restano legati alle loro aiuole.</div>`;
@@ -935,7 +972,7 @@ function moduloAiuola(a) {
       if (dati.capanno) Object.assign(dati, { giroSerra: false, pacciamatura: "", fissa: "", righe: 1, colonne: 1 });
       if (dati.vaso) Object.assign(dati, { giroSerra: false, pacciamatura: "", righe: 1, colonne: 1 });
       if (dati.vaso === "tondo" || dati.vaso === "quadrato") dati.lunghezza = dati.larghezza;
-      const doppia = S.aiuole.some((x) => x !== a && !x.semenzaio && (x.zona || ZONA_PREDEFINITA) === v.zona && String(x.numero) === v.numero);
+      const doppia = S.aiuole.some((x) => x !== a && !x.semenzaio && !x.dentro && (x.zona || ZONA_PREDEFINITA) === v.zona && String(x.numero) === v.numero);
       if (doppia && v.faiPosto) for (const [x, nuovo] of spostamentiAiuole(v.zona, dati.numero, a)) x.numero = nuovo;
       if (a) {
         Object.assign(a, dati);
@@ -947,6 +984,114 @@ function moduloAiuola(a) {
         for (const i of S.impianti) if (i.aiuolaId === a.id && i.celle) i.celle = celleValide(a, i.celle);
       }
       else S.aiuole.push({ id: nuovoId(), ...dati });
+    },
+  });
+}
+
+// Divide un'aiuola in parti, ognuna con la sua scacchiera (es. aglio a 21 per
+// fila e cipolle a 14). Le colture in corso vanno nella parte scelta; le loro
+// caselle si riportano sulla scacchiera della parte (una sola coltura = tutte le caselle).
+const LETTERE_PARTI = "abcdefghij";
+const MAX_PARTI = 4;
+function moduloDividi(a) {
+  const attivi = impiantiAttivi(a.id);
+  const gP = grigliaAiuola(a);
+  // Proposta per ogni coltura: la parte dove sta il centro delle sue caselle (2 parti uguali).
+  const proposta = (i) => {
+    const cc = celleValide(a, i.celle || []).map((n) => cellaRC(n).c);
+    return cc.length && cc.reduce((t, c) => t + c + 0.5, 0) / cc.length / gP.colonne >= 0.5 ? "b" : "a";
+  };
+  const campi = [
+    { id: "divisa", etichetta: "Come sono le parti", tipo: "select", opzioni: [["lato", "Affiancate, da sinistra a destra"], ["fondo", "Una dietro l'altra, dal fondo verso di te"]], valore: "lato" },
+    { id: "quante", etichetta: "Quante parti", tipo: "select", opzioni: [["2", "2"], ["3", "3"], ["4", "4"]], valore: "2" },
+  ];
+  for (let k = 0; k < MAX_PARTI; k++) {
+    const L = LETTERE_PARTI[k];
+    campi.push(
+      { id: `nome${k}`, etichetta: `Parte ${L}: nome (facoltativo, es. Aglio)`, valore: "" },
+      { id: `misura${k}`, etichetta: `Parte ${L}: larghezza in metri`, tipo: "number", passo: "0.05", valore: "" },
+      { id: `righe${k}`, etichetta: `Parte ${L}: scacchiera, righe a, b, c… (dal fondo verso di te)`, tipo: "number", passo: "1", valore: 1 },
+      { id: `colonne${k}`, etichetta: `Parte ${L}: scacchiera, colonne 1, 2, 3… (da sinistra a destra)`, tipo: "number", passo: "1", valore: 1 },
+    );
+  }
+  for (const i of attivi) campi.push({ id: `imp_${i.id}`, etichetta: `In quale parte va ${nomeOrtaggioTesto(i.ortaggioId)}${i.celle?.length ? ` (adesso in ${testoCelle(i)})` : ""}`,
+    tipo: "select", opzioni: [...LETTERE_PARTI.slice(0, MAX_PARTI)].map((L) => [L, `Parte ${L}`]), valore: proposta(i) });
+  modulo({
+    titolo: `Dividi ${nomeAiuola(a)} in parti`,
+    campi,
+    testoSalva: "✂️ Dividi",
+    extra: `<p class="tenue piccolo">Ogni parte diventa come un'aiuola: ha la sua scacchiera, le sue colture e la sua storia. Sulla mappa resta una sola aiuola${a.copertura === "serra" ? ", con una sola serra e una sola porta" : ""}. Quello che hai coltivato qui finora conta per la rotazione di tutte le parti.</p>`,
+    aggiorna: (v, form) => {
+      const n = Number(v.quante), fondo = v.divisa === "fondo";
+      for (let k = 0; k < MAX_PARTI; k++) {
+        for (const c of ["nome", "misura", "righe", "colonne"]) form.querySelector(`#w_${c}${k}`).hidden = k >= n;
+        form.querySelector(`label[for=m_misura${k}]`).textContent = `Parte ${LETTERE_PARTI[k]}: ${fondo ? "profondità in metri (dal fondo verso di te)" : "larghezza in metri (da sinistra a destra)"}`;
+      }
+      const dim = Number(fondo ? a.lunghezza : a.larghezza) || 0;
+      const somma = [...Array(n).keys()].reduce((t, k) => t + (Number(String(v[`misura${k}`]).replace(",", ".")) || 0), 0);
+      const fuori = attivi.filter((i) => LETTERE_PARTI.indexOf(v[`imp_${i.id}`]) >= n);
+      return (dim && somma ? `<div class="${Math.abs(somma - dim) > 0.05 ? "avviso" : "bene"} piccolo">Parti: ${fmtM(somma)} m su ${fmtM(dim)} m ${fondo ? "di profondità" : "di larghezza"} dell'aiuola${Math.abs(somma - dim) > 0.05 ? ": sulla mappa le parti si allargano o si stringono per riempirla" : ""}.</div>` : "")
+        + (fuori.length ? `<div class="avviso">Ci sono solo ${n} parti: scegli una parte che esiste per ${fuori.map((i) => esc(nomeOrtaggioTesto(i.ortaggioId))).join(", ")}.</div>` : "");
+    },
+    salva: (v) => {
+      const n = Number(v.quante), fondo = v.divisa === "fondo";
+      if (attivi.some((i) => LETTERE_PARTI.indexOf(v[`imp_${i.id}`]) >= n)) return false;
+      const parti = [...Array(n).keys()].map((k) => ({
+        id: nuovoId() + k, dentro: a.id, parte: LETTERE_PARTI[k], nome: v[`nome${k}`], note: "", pacciamatura: a.pacciamatura || "",
+        larghezza: fondo ? a.larghezza : numeroMisura(v[`misura${k}`]), lunghezza: fondo ? numeroMisura(v[`misura${k}`]) : a.lunghezza,
+        ...grigliaAiuola({ righe: v[`righe${k}`], colonne: v[`colonne${k}`] }),
+      }));
+      // Dove sta ogni parte, da 0 a 1 lungo la divisione (uguali se mancano le misure).
+      const m = parti.map((b) => Number(fondo ? b.lunghezza : b.larghezza) || 0);
+      const tot = m.reduce((t, x) => t + x, 0), misurate = m.every((x) => x > 0);
+      let pos = 0;
+      const tratti = m.map((x) => { const q = misurate ? x / tot : 1 / n; const t = [pos, pos + q]; pos += q; return t; });
+      const quante = {};
+      for (const i of attivi) quante[v[`imp_${i.id}`]] = (quante[v[`imp_${i.id}`]] || 0) + 1;
+      for (const i of attivi) {
+        const k = LETTERE_PARTI.indexOf(v[`imp_${i.id}`]), b = parti[k], [s0, s1] = tratti[k], gB = grigliaAiuola(b);
+        const celle = [];
+        for (const nome of celleValide(a, i.celle || [])) {
+          const { r, c } = cellaRC(nome);
+          const fx = (c + 0.5) / gP.colonne, fy = (r + 0.5) / gP.righe, f = fondo ? fy : fx;
+          if (f < s0 || f >= s1) continue;
+          const rel = (f - s0) / (s1 - s0);
+          celle.push(nomeCella(Math.floor((fondo ? rel : fy) * gB.righe), Math.floor((fondo ? fx : rel) * gB.colonne)));
+        }
+        i.aiuolaId = b.id;
+        // Da sola nella parte: tutte le caselle; con altre: le caselle riportate.
+        i.celle = !haGriglia(b) ? [] : quante[b.parte] > 1 && celle.length ? ordinaCelle([...new Set(celle)]) : tutteLeCelle(b);
+      }
+      a.divisa = v.divisa;
+      S.aiuole.push(...parti);
+    },
+  });
+}
+function moduloParte(b, p) {
+  const fondo = p.divisa === "fondo";
+  modulo({
+    titolo: b ? `Modifica ${nomeAiuola(b)}` : `Nuova parte di ${nomeAiuola(p)}`,
+    campi: [
+      { id: "nome", etichetta: "Nome (facoltativo, es. Aglio)", valore: b?.nome },
+      { id: "misura", etichetta: fondo ? "Profondità in metri (dal fondo verso di te)" : "Larghezza in metri (da sinistra a destra)", tipo: "number", passo: "0.05", valore: b ? (fondo ? b.lunghezza : b.larghezza) : "" },
+      { id: "righe", etichetta: "Scacchiera: righe a, b, c… (dal fondo verso di te)", tipo: "number", passo: "1", valore: grigliaAiuola(b).righe },
+      { id: "colonne", etichetta: "Scacchiera: colonne 1, 2, 3… (da sinistra a destra)", tipo: "number", passo: "1", valore: grigliaAiuola(b).colonne },
+      { id: "pacciamatura", etichetta: "Pacciamatura", tipo: "select", opzioni: Object.entries(PACCIAMATURE), valore: b?.pacciamatura ?? p.pacciamatura ?? "" },
+      { id: "fissa", etichetta: "Sempre lo stesso ortaggio, ogni anno (non si ruota)", tipo: "select",
+        opzioni: [["", "— no, si ruota —"], ...elencoOrtaggi().map((o) => [o.id, `${o.emoji} ${o.nome}`])], valore: b?.fissa ?? "" },
+      { id: "note", etichetta: "Note", tipo: "textarea", valore: b?.note },
+    ],
+    extra: `<p class="tenue piccolo">Zona, numero, fila, serra e porta sono quelli di ${esc(nomeAiuola(p))}: si cambiano lì.</p>`,
+    salva: (v) => {
+      const dati = { nome: v.nome, note: v.note, pacciamatura: v.pacciamatura, fissa: v.fissa, ...grigliaAiuola({ righe: v.righe, colonne: v.colonne }) };
+      dati[fondo ? "lunghezza" : "larghezza"] = numeroMisura(v.misura);
+      if (b) {
+        Object.assign(b, dati);
+        for (const i of S.impianti) if (i.aiuolaId === b.id && i.celle) i.celle = celleValide(b, i.celle);
+      } else {
+        const usate = partiDi(p).map((x) => x.parte);
+        S.aiuole.push({ id: nuovoId(), dentro: p.id, parte: [...LETTERE_PARTI].find((l) => !usate.includes(l)) || "z", ...dati });
+      }
     },
   });
 }
@@ -1056,7 +1201,7 @@ function moduloZona(zona) {
 // fondo a quella davanti, in ogni fila da sinistra a destra (posizione come in
 // htmlPianta: «inizio» se c'è, altrimenti una dopo l'altra in ordine di numero).
 function ordineLettura(zona) {
-  const lista = aiuoleOrdinate().filter((a) => !a.semenzaio && (a.zona || ZONA_PREDEFINITA) === zona);
+  const lista = aiuoleOrdinate().filter((a) => !a.semenzaio && !a.dentro && (a.zona || ZONA_PREDEFINITA) === zona);
   const fine = {}, x = new Map();
   for (const a of lista) {
     const f = filaAiuola(a);
@@ -1087,7 +1232,7 @@ function aggiornaNuovaAiuola(v, form) {
     form.dataset.zona = v.nz_zona;
     form.elements.nz_numero.value = prossimoNumero(v.nz_zona);
   }
-  const doppia = S.aiuole.find((x) => !x.semenzaio && (x.zona || ZONA_PREDEFINITA) === v.nz_zona && String(x.numero) === form.elements.nz_numero.value);
+  const doppia = S.aiuole.find((x) => !x.semenzaio && !x.dentro && (x.zona || ZONA_PREDEFINITA) === v.nz_zona && String(x.numero) === form.elements.nz_numero.value);
   return doppia ? `<div class="avviso">C'è già l'aiuola ${esc(doppia.numero)} in «${esc(v.nz_zona)}»: scegli un altro numero, oppure sceglila dall'elenco «Dove».</div>` : "";
 }
 // Crea l'aiuola se è stata scelta "Nuova aiuola"; restituisce l'id da usare.
@@ -1182,7 +1327,7 @@ function moduloImpianto({ aiuolaId, ortaggioId, impianto, celle } = {}) {
       const avvisoCelle = aggiornaSceltaCelle(form, v2.aiuolaId, i?.id);
       const celleScelte = form.elements.celle.value.split(",").filter(Boolean);
       return aggiornaNuovaAiuola(v2, form) + avvisoCelle + proposta + htmlAvvisi(v2.aiuolaId, v2.ortaggioId, v2.data, i?.id, celleScelte, protezione)
-        + (protezione === "tnt" ? `<div class="bene piccolo">${CONSIGLIO_TNT}</div>` : "");
+        + (CONSIGLI_PROTEZIONE[protezione] ? `<div class="bene piccolo">${CONSIGLI_PROTEZIONE[protezione]}</div>` : "");
     },
     salva: (v) => {
       v.aiuolaId = aiuolaDaModulo(v);
@@ -1301,7 +1446,7 @@ function moduloTrapianto(i) {
         : rimaste != null && n > rimaste ? `<div class="avviso">Nel semenzaio ce ne sono solo ${rimaste}.</div>` : "";
       return aggiornaNuovaAiuola(v, form) + avvisoCelle + resto
         + htmlAvvisi(v.aiuolaId, i.ortaggioId, v.data, null, form.elements.celle.value.split(",").filter(Boolean), v.protezione)
-        + (v.protezione === "tnt" ? `<div class="bene piccolo">${CONSIGLIO_TNT}</div>` : "");
+        + (CONSIGLI_PROTEZIONE[v.protezione] ? `<div class="bene piccolo">${CONSIGLI_PROTEZIONE[v.protezione]}</div>` : "");
     },
     salva: (v) => {
       if (!v.aiuolaId) return false;
@@ -1334,7 +1479,7 @@ function moduloEvento({ tipo = "raccolto", aiuolaId, impiantoId, evento, testo }
     campi: [
       { id: "tipo", etichetta: "Che cosa", tipo: "select", opzioni: Object.entries(TIPI_EVENTO), valore: ev?.tipo ?? tipo },
       { id: "data", etichetta: "Data", tipo: "date", valore: ev?.data ?? aISO(oggi()), richiesto: true },
-      { id: "aiuolaId", etichetta: "Aiuola (facoltativo)", tipo: "select", opzioni: [["", "— tutto l'orto —"], ...opzioniAiuole()], valore: ev?.aiuolaId ?? aiuolaId ?? "" },
+      { id: "aiuolaId", etichetta: "Aiuola (facoltativo)", tipo: "select", opzioni: [["", "— tutto l'orto —"], ...aiuoleOrdinate().filter((x) => !x.capanno).map((x) => [x.id, nomeAiuola(x)])], valore: ev?.aiuolaId ?? aiuolaId ?? "" },
       { id: "impiantoId", etichetta: "Coltura (facoltativo)", tipo: "select",
         opzioni: [["", "—"], ...attivi.map((x) => [x.id, `${nomeOrtaggioTesto(x.ortaggioId)} — ${nomeAiuolaId(x.aiuolaId)}`])],
         valore: ev?.impiantoId ?? impiantoId ?? "" },
@@ -1579,6 +1724,9 @@ async function aggiornaMeteo(forza = false) {
 
 function htmlMeteo(m) {
   const g = m.giorni;
+  // Colture sotto una miniserra in PVC trasparente: col sole vanno arieggiate.
+  const sottoTelo = [...new Set(S.impianti.filter((i) => !i.finito && i.protezione === "tunnelTelo" && coltivabile(aiuola(i.aiuolaId)))
+    .map((i) => PER_ID[i.ortaggioId]?.nome.toLowerCase()).filter(Boolean))];
   let celle = "";
   const avvisi = [];
   let pioggia = 0;
@@ -1589,6 +1737,7 @@ function htmlMeteo(m) {
     pioggia += mm;
     const freddo = min <= SOGLIA_BRINATA;
     if (freddo) avvisi.push(`<div class="pericolo">🥶 ${k === 0 ? "Oggi" : GIORNI[d.getDay()] + " " + d.getDate()}: minima ${Math.round(min)} °C, rischio brinata. Copri le piantine con il tessuto non tessuto.</div>`);
+    if (k <= 1 && max >= 13 && sottoTelo.length) avvisi.push(`<div class="avviso">⛺ ${k === 0 ? "Oggi" : "Domani"} massima ${Math.round(max)} °C: nelle ore di sole apri le testate delle miniserre in PVC (${esc(sottoTelo.join(", "))}) e richiudi nel pomeriggio.</div>`);
     if (max >= 32) avvisi.push(`<div class="avviso">🔥 ${GIORNI[d.getDay()]} ${d.getDate()}: massima ${Math.round(max)} °C. Annaffia la sera e ombreggia le insalate.</div>`);
     celle += `<div class="giorno ${freddo ? "freddo" : ""}">
       <div>${k === 0 ? "oggi" : GIORNI[d.getDay()]}</div>
@@ -1599,7 +1748,7 @@ function htmlMeteo(m) {
     </div>`;
   });
   const primi3 = g.precipitation_sum.slice(0, 3).reduce((a, b) => a + (b ?? 0), 0);
-  if (primi3 >= 10) avvisi.push(`<div class="bene">🌧️ Nei prossimi 3 giorni sono previsti ${Math.round(primi3)} mm di pioggia: puoi saltare le annaffiature.</div>`);
+  if (primi3 >= 10) avvisi.push(`<div class="bene">🌧️ Nei prossimi 3 giorni sono previsti ${Math.round(primi3)} mm di pioggia: puoi saltare le annaffiature${sottoTelo.length || S.aiuole.some((a) => a.copertura === "serra" && coltivabile(a)) ? " (non in serra e sotto le miniserre in PVC, dove la pioggia non arriva)" : ""}.</div>`);
   else if (pioggia < 3 && g.temperature_2m_max.slice(0, 3).some((x) => x >= 22)) avvisi.push(`<div class="avviso">💧 Settimana asciutta: ricordati di annaffiare.</div>`);
   const agg = new Date(m.quando);
   return `<div class="meteo">${celle}</div>${avvisi.join("")}
@@ -1787,10 +1936,13 @@ function vistaOrto(idAiuola) {
     if (a.capanno) return `<a class="carta" href="#orto/${a.id}" style="display:block;color:inherit;text-decoration:none">
       <div class="riga" style="display:flex;justify-content:space-between;gap:8px"><b>${esc(nomeAiuola(a))}</b>
       <span class="tenue piccolo">${esc([misureAiuola(a), tipoAiuola(a)].filter(Boolean).join(" · "))}</span></div></a>`;
+    if (partiDi(a).length) return `<a class="carta" href="#orto/${a.id}" style="display:block;color:inherit;text-decoration:none">
+      <div class="riga" style="display:flex;justify-content:space-between;gap:8px"><b>${iconaAiuola(a)} ${esc(nomeAiuola(a))}</b>
+      <span class="tenue piccolo">${esc([misureAiuola(a), tipoAiuola(a)].filter(Boolean).join(" · "))}</span></div></a>`;
     const attivi = impiantiAttivi(a.id);
     const problemi = attivi.reduce((n, i) => n + avvisiRotazione(a.id, i.ortaggioId, i.data, i.id, i.celle).length
       + avvisiVicini(a.id, i.ortaggioId, i.id, i.celle).cattivi.length, 0);
-    return `<a class="carta" href="#orto/${a.id}" style="display:block;color:inherit;text-decoration:none">
+    return `<a class="carta" href="#orto/${a.id}" style="display:block;color:inherit;text-decoration:none${a.dentro ? ";margin-left:20px" : ""}">
       <div class="riga" style="display:flex;justify-content:space-between;gap:8px"><b>${iconaAiuola(a)} ${esc(nomeAiuola(a))}</b>
       <span class="tenue piccolo">${esc([misureAiuola(a), tipoAiuola(a)].filter(Boolean).join(" · "))}</span></div>
       <div>${attivi.length ? attivi.map((i) => `<span class="chip">${nomeOrtaggio(i.ortaggioId)}${i.celle?.length ? ` <span class="tenue">${esc(testoCelle(i))}</span>` : ""}</span>`).join("") : `<span class="tenue">vuota</span>`}</div>
@@ -1818,7 +1970,7 @@ function vistaOrto(idAiuola) {
 // perScelta: solo il disegno, dentro un modulo (le aiuole si toccano per sceglierle).
 function htmlPianta(soloZona, perScelta = false) {
   const blocchi = zone().filter((z) => !soloZona || z === soloZona).map((zona) => {
-    const lista = aiuoleOrdinate().filter((a) => !a.semenzaio && (a.zona || ZONA_PREDEFINITA) === zona);
+    const lista = aiuoleOrdinate().filter((a) => !a.semenzaio && !a.dentro && (a.zona || ZONA_PREDEFINITA) === zona);
     if (!lista.length) return "";
     const misurate = lista.filter((a) => a.larghezza && a.lunghezza && !a.capanno);
     const mediaL = misurate.length ? misurate.reduce((s, a) => s + a.larghezza, 0) / misurate.length : 1;
@@ -1903,71 +2055,98 @@ function htmlPianta(soloZona, perScelta = false) {
       // in fondo le ha sopra, quella davanti sotto, quelle in mezzo dentro l'aiuola.
       // Così tra le file resta solo il vialetto vero.
       const dove = doveScritte({ f, w, h });
-      const attivi = a.capanno ? [] : impiantiAttivi(a.id);
-      const problemi = attivi.some((i) => avvisiRotazione(a.id, i.ortaggioId, i.data, i.id, i.celle).length
-        || avvisiVicini(a.id, i.ortaggioId, i.id, i.celle).cattivi.length);
+      const parti = partiDi(a);
+      const problemi = [a, ...parti].some((b) => (b.capanno ? [] : impiantiAttivi(b.id)).some((i) => avvisiRotazione(b.id, i.ortaggioId, i.data, i.id, i.celle).length
+        || avvisiVicini(b.id, i.ortaggioId, i.id, i.celle).cattivi.length));
       const e = fs * 1.25; // lato di un'emoji
-      const perRiga = Math.max(1, Math.floor((w - fs * 0.3) / e));
-      const righe = Math.max(0, Math.floor((h - fs * 0.6) / e));
-      const tutte = attivi.map((i) => PER_ID[i.ortaggioId]);
-      const posti = perRiga * righe;
-      const emoji = tutte.length > posti ? [...tutte.slice(0, Math.max(0, posti - 1)), `+${tutte.length - Math.max(0, posti - 1)}`] : tutte;
       const cx = x + w / 2;
-      const griglia = haGriglia(a) && !a.capanno;
-      let testi = "", linee = "";
-      if (griglia) {
-        // Scacchiera: linee e, in ogni casella, l'emoji di chi la occupa.
-        const g = grigliaAiuola(a);
-        const cw = w / g.colonne, ch = h / g.righe;
-        const manca = celleMancanti(a);
-        // Caselle che sono vasi: un cerchio per casella, ogni fila centrata.
-        const vasi = formaVasiCaselle(a);
-        const colonneFila = (r) => [...Array(g.colonne).keys()].filter((c) => !manca.has(nomeCella(r, c)));
-        const xCella = (r, c) => {
-          if (!vasi) return x + (c + 0.5) * cw;
-          const qui = colonneFila(r);
-          return x + ((g.colonne - qui.length) / 2 + qui.indexOf(c) + 0.5) * cw;
-        };
-        if (vasi) {
-          // Misura del vaso: quella scritta (al massimo la casella), altrimenti quasi tutta la casella.
-          const misura = (m, lato) => Math.min(lato * 0.96, m > 0 ? m : lato * 0.9);
-          const tondo = vasi === "tondo";
-          const vw = vasi === "rettangolare" ? misura(a.vasoL, cw) : misura(a.vasoL, Math.min(cw, ch));
-          const vh = vasi === "rettangolare" ? misura(a.vasoP, ch) : vw;
-          for (let r = 0; r < g.righe; r++) for (const c of colonneFila(r)) {
-            const mx = xCella(r, c), my = y + (r + 0.5) * ch;
-            if (tondo) {
-              const [px, py] = T(mx, my);
-              linee += `<circle class="p-aiuola p-vaso" cx="${px}" cy="${py}" r="${vw / 2}"/>`;
-            } else linee += `<polygon class="p-aiuola p-vaso" points="${punti(angoli(mx - vw / 2, my - vh / 2, vw, vh))}"/>`;
+      const tutte = (a.capanno ? [] : impiantiAttivi(a.id)).map((i) => PER_ID[i.ortaggioId]);
+      const posti = Math.max(1, Math.floor((w - fs * 0.3) / e)) * Math.max(0, Math.floor((h - fs * 0.6) / e));
+      // Il disegno dentro un rettangolo (l'aiuola o una sua parte): scacchiera, oppure le icone in fila.
+      const riempi = (a, x, y, w, h, dove) => {
+        const attivi = a.capanno ? [] : impiantiAttivi(a.id);
+        const perRiga = Math.max(1, Math.floor((w - fs * 0.3) / e));
+        const righe = Math.max(0, Math.floor((h - fs * (dove === "parte" ? 1.4 : 0.6)) / e));
+        const tutte = attivi.map((i) => PER_ID[i.ortaggioId]);
+        const posti = perRiga * righe;
+        const emoji = tutte.length > posti ? [...tutte.slice(0, Math.max(0, posti - 1)), `+${tutte.length - Math.max(0, posti - 1)}`] : tutte;
+        const cx = x + w / 2;
+        const griglia = haGriglia(a) && !a.capanno;
+        let testi = "", linee = "";
+        if (griglia) {
+          // Scacchiera: linee e, in ogni casella, l'emoji di chi la occupa.
+          const g = grigliaAiuola(a);
+          const cw = w / g.colonne, ch = h / g.righe;
+          const manca = celleMancanti(a);
+          // Caselle che sono vasi: un cerchio per casella, ogni fila centrata.
+          const vasi = formaVasiCaselle(a);
+          const colonneFila = (r) => [...Array(g.colonne).keys()].filter((c) => !manca.has(nomeCella(r, c)));
+          const xCella = (r, c) => {
+            if (!vasi) return x + (c + 0.5) * cw;
+            const qui = colonneFila(r);
+            return x + ((g.colonne - qui.length) / 2 + qui.indexOf(c) + 0.5) * cw;
+          };
+          if (vasi) {
+            // Misura del vaso: quella scritta (al massimo la casella), altrimenti quasi tutta la casella.
+            const misura = (m, lato) => Math.min(lato * 0.96, m > 0 ? m : lato * 0.9);
+            const tondo = vasi === "tondo";
+            const vw = vasi === "rettangolare" ? misura(a.vasoL, cw) : misura(a.vasoL, Math.min(cw, ch));
+            const vh = vasi === "rettangolare" ? misura(a.vasoP, ch) : vw;
+            for (let r = 0; r < g.righe; r++) for (const c of colonneFila(r)) {
+              const mx = xCella(r, c), my = y + (r + 0.5) * ch;
+              if (tondo) {
+                const [px, py] = T(mx, my);
+                linee += `<circle class="p-aiuola p-vaso" cx="${px}" cy="${py}" r="${vw / 2}"/>`;
+              } else linee += `<polygon class="p-aiuola p-vaso" points="${punti(angoli(mx - vw / 2, my - vh / 2, vw, vh))}"/>`;
+            }
           }
+          const seg = (x1, y1, x2, y2) => { const [p1, p2] = [T(x1, y1), T(x2, y2)]; return `<line class="p-griglia" x1="${p1[0]}" y1="${p1[1]}" x2="${p2[0]}" y2="${p2[1]}" stroke-width="${fs * 0.06}"/>`; };
+          // Linee solo se le caselle sono abbastanza grandi da vederle (almeno 5 px).
+          if (!vasi && cw * scala >= 5) for (let c = 1; c < g.colonne; c++) linee += seg(x + c * cw, y, x + c * cw, y + h);
+          if (!vasi && ch * scala >= 5) for (let r = 1; r < g.righe; r++) linee += seg(x, y + r * ch, x + w, y + r * ch);
+          const occ = occupazione(a.id);
+          const libere = [];
+          const dim = Math.min(e * 0.85, Math.min(cw, ch) * 0.7);
+          for (let r = 0; r < g.righe; r++) for (let c = 0; c < g.colonne; c++) {
+            const n = nomeCella(r, c);
+            if (manca.has(n)) continue;
+            if (occ[n]) testi += iconaPianta(xCella(r, c), y + (r + 0.5) * ch, PER_ID[occ[n][0].ortaggioId], dim);
+            else libere.push([r, c]);
+          }
+          // Colture su tutta l'aiuola: nelle caselle libere.
+          impiantiAttivi(a.id).filter((i) => !i.celle?.length).forEach((i, k) => {
+            if (!libere[k]) return;
+            const [r, c] = libere[k];
+            testi += iconaPianta(xCella(r, c), y + (r + 0.5) * ch, PER_ID[i.ortaggioId], dim);
+          });
+        } else {
+          testi = (posti ? emoji : []).map((em, k) => {
+            const px = cx + ((k % perRiga) - (Math.min(perRiga, emoji.length) - 1) / 2) * e;
+            // Nel vaso le piantine stanno al centro.
+            const su = a.vaso ? (h - Math.min(righe, Math.ceil(emoji.length / perRiga)) * e) / 2 : dove === "dentro" ? fs * 2.4 : dove === "parte" ? fs * 1.1 : fs * 0.3;
+            const py = y + su + Math.floor(k / perRiga) * e + e * 0.5;
+            return typeof em === "string" ? testo(px, py, em, "p-emoji", e * 0.85) : iconaPianta(px, py, em, e * 0.85);
+          }).join("");
         }
-        const seg = (x1, y1, x2, y2) => { const [p1, p2] = [T(x1, y1), T(x2, y2)]; return `<line class="p-griglia" x1="${p1[0]}" y1="${p1[1]}" x2="${p2[0]}" y2="${p2[1]}" stroke-width="${fs * 0.06}"/>`; };
-        // Linee solo se le caselle sono abbastanza grandi da vederle (almeno 5 px).
-        if (!vasi && cw * scala >= 5) for (let c = 1; c < g.colonne; c++) linee += seg(x + c * cw, y, x + c * cw, y + h);
-        if (!vasi && ch * scala >= 5) for (let r = 1; r < g.righe; r++) linee += seg(x, y + r * ch, x + w, y + r * ch);
-        const occ = occupazione(a.id);
-        const libere = [];
-        const dim = Math.min(e * 0.85, Math.min(cw, ch) * 0.7);
-        for (let r = 0; r < g.righe; r++) for (let c = 0; c < g.colonne; c++) {
-          const n = nomeCella(r, c);
-          if (manca.has(n)) continue;
-          if (occ[n]) testi += iconaPianta(xCella(r, c), y + (r + 0.5) * ch, PER_ID[occ[n][0].ortaggioId], dim);
-          else libere.push([r, c]);
-        }
-        // Colture su tutta l'aiuola: nelle caselle libere.
-        impiantiAttivi(a.id).filter((i) => !i.celle?.length).forEach((i, k) => {
-          if (!libere[k]) return;
-          const [r, c] = libere[k];
-          testi += iconaPianta(xCella(r, c), y + (r + 0.5) * ch, PER_ID[i.ortaggioId], dim);
-        });
-      } else {
-        testi = (posti ? emoji : []).map((em, k) => {
-          const px = cx + ((k % perRiga) - (Math.min(perRiga, emoji.length) - 1) / 2) * e;
-          // Nel vaso le piantine stanno al centro.
-          const su = a.vaso ? (h - Math.min(righe, Math.ceil(emoji.length / perRiga)) * e) / 2 : dove === "dentro" ? fs * 2.4 : fs * 0.3;
-          const py = y + su + Math.floor(k / perRiga) * e + e * 0.5;
-          return typeof em === "string" ? testo(px, py, em, "p-emoji", e * 0.85) : iconaPianta(px, py, em, e * 0.85);
+        return [linee, testi];
+      };
+      let [linee, testi] = parti.length ? ["", ""] : riempi(a, x, y, w, h, dove);
+      // Aiuola divisa: le parti affiancate (o una dietro l'altra), ognuna col suo disegno e la sua lettera.
+      let partiSvg = "";
+      if (parti.length) {
+        const fondo = a.divisa === "fondo";
+        const misura = (b) => Number(fondo ? b.lunghezza : b.larghezza) || 0;
+        const tot = parti.reduce((t, b) => t + misura(b), 0);
+        const tutteMisurate = parti.every((b) => misura(b) > 0);
+        let pos = 0;
+        partiSvg = parti.map((b) => {
+          const q = tutteMisurate ? misura(b) / tot : 1 / parti.length;
+          const [bx, by, bw, bh] = fondo ? [x, y + pos * h, w, q * h] : [x + pos * w, y, q * w, h];
+          pos += q;
+          const [li, te] = riempi(b, bx, by, bw, bh, "parte");
+          return `<a href="#orto/${b.id}"${perScelta && coltivabile(b) ? ` data-scegli="${b.id}"` : ""}><title>${esc(nomeAiuola(b))}${b.larghezza && b.lunghezza ? " · " + esc(misureAiuola(b)) : ""}</title>
+            <polygon class="p-aiuola p-parte${b.pacciamatura ? " p-" + b.pacciamatura : ""}" points="${punti(angoli(bx, by, bw, bh))}"/>${li}${te}
+            ${testo(bx + bw / 2, by + fs * 0.55, esc(b.parte || ""), "p-lettera", fs * 0.8)}</a>`;
         }).join("");
       }
       if (a.capanno) testi = testo(cx, y + h / 2, "🧰", "p-emoji", Math.min(fs * 2, h * 0.6, w * 0.6));
@@ -1998,6 +2177,7 @@ function htmlPianta(soloZona, perScelta = false) {
         <title>${esc(nomeAiuola(a))}${misurata ? " · " + esc(misureAiuola(a)) : ""}</title>
         ${a.vaso === "tondo" ? `<circle class="p-aiuola p-vaso${misurata ? "" : " p-senza"}" cx="${T(cx, y + h / 2)[0]}" cy="${T(cx, y + h / 2)[1]}" r="${w / 2}"/>`
           : `<polygon class="p-aiuola${misurata ? "" : " p-senza"}${a.capanno ? " p-capanno" : ""}${a.vaso ? " p-vaso" : ""}${formaVasiCaselle(a) && haGriglia(a) ? " p-base-vasi" : ""}${a.pacciamatura ? " p-" + a.pacciamatura : ""}" points="${punti(angoli(x, y, w, h))}"/>`}
+        ${partiSvg ? `</a>${partiSvg}<a href="#orto/${a.id}">` : ""}
         ${a.copertura === "serra" ? `<polygon class="p-serra" points="${punti(angoli(x + d, y + d, Math.max(0, w - 2 * d), Math.max(0, h - 2 * d)))}"/>` : ""}
         ${(a.copertura === "serra" || a.capanno) && PORTE[a.porta] && a.porta ? (() => {
           // Porta: un tratto marrone a metà del lato da cui si entra.
@@ -2173,7 +2353,7 @@ function vistaAiuola(a) {
     const stime = stimeImpianto(i).map((s) => `${FASI[s.tipo].breve} ~${fmt(s.data)}`).join(" · ");
     const avv = htmlAvvisi(a.id, i.ortaggioId, i.data, i.id, i.celle, i.protezione).replace(/<div class="avviso">📅[^<]*<\/div>/, "");
     return `<li>
-      <div><b>${icona(o)} ${esc(o.nome)}</b>${i.varieta ? ` <span class="tenue">${esc(i.varieta)}</span>` : ""}${i.celle?.length ? ` · <b>${esc(testoCelle(i))}</b>` : ""}${i.protezione === "tnt" ? " · 🧣 TNT" : ""}</div>
+      <div><b>${icona(o)} ${esc(o.nome)}</b>${i.varieta ? ` <span class="tenue">${esc(i.varieta)}</span>` : ""}${i.celle?.length ? ` · <b>${esc(testoCelle(i))}</b>` : ""}${PROTEZIONE_BREVE[i.protezione] ? ` · ${PROTEZIONE_BREVE[i.protezione]}` : ""}</div>
       <div class="tenue piccolo">${i.modo === "acq" ? "🛒 " : ""}${esc(MODI[i.modo] ?? "")} il ${fmt(daISO(i.data))}${i.modo === "acq" ? (testoAcquisto(i) ? " · " + esc(testoAcquisto(i)) : "") : i.quantita ? " · " + esc(i.quantita) : ""}${stime ? " · previsti: " + stime : ""}</div>
       ${a.semenzaio && Number(i.trapiantate) > 0 ? `<div class="bene piccolo">🚜 Trapiantate ${i.trapiantate}${piantineRimaste(i) != null ? `, nel semenzaio ne restano <b>${piantineRimaste(i)}</b>` : ""}.</div>` : ""}
       ${i.note ? `<div class="piccolo">${esc(i.note)}</div>` : ""}
@@ -2194,8 +2374,32 @@ function vistaAiuola(a) {
     `<p><b>${anno}:</b> ${l.map((i) => `<button type="button" class="voce-storico" data-modifica-imp="${i.id}" title="Tocca per modificare o eliminare">${nomeOrtaggio(i.ortaggioId)}${i.esito === "fallito" ? " ✗" : ""}</button>${i.commento ? ` <span class="tenue">(${esc(i.commento)})</span>` : ""}`).join(", ")}</p>`).join("") + `<p class="tenue piccolo">Tocca un ortaggio per modificarlo o eliminarlo.</p>`
     : `<p class="tenue">Ancora niente: qui comparirà cosa hai coltivato negli anni passati.</p>`;
 
+  const parti = partiDi(a);
+  if (parti.length) return `<p><a href="#orto">← Tutte le aiuole</a></p>
+    <h2>${iconaAiuola(a)} ${esc(nomeAiuola(a))}</h2>
+    <p class="tenue">${esc([misureAiuola(a), tipoAiuola(a)].filter(Boolean).join(" · "))}</p>
+    ${a.note ? `<p>${esc(a.note)}</p>` : ""}
+    ${malattieTerreno(a.id, null, aISO(oggi())).map((e) => `<div class="pericolo">${esc(testoMalattia(e))}</div>`).join("")}
+    <section class="carta"><h3 style="margin-top:0">✂️ Le parti</h3>
+      <ul class="elenco">${parti.map((b) => {
+        const g = grigliaAiuola(b), att = impiantiAttivi(b.id);
+        return `<li><a href="#orto/${b.id}"><b>${iconaAiuola(b)} ${esc(nomeAiuola(b))}</b></a>
+          <span class="tenue piccolo">${esc([misureAiuola(b), g.righe * g.colonne > 1 ? `scacchiera ${g.righe} × ${g.colonne}` : ""].filter(Boolean).join(" · "))}</span>
+          <div>${att.length ? att.map((i) => `<span class="chip">${nomeOrtaggio(i.ortaggioId)}</span>`).join("") : `<span class="tenue">vuota</span>`}</div></li>`;
+      }).join("")}</ul>
+      <div class="riga-bottoni"><button class="secondario" id="nuova-parte">＋ Aggiungi una parte</button></div>
+      <p class="tenue piccolo">Ogni parte ha la sua scacchiera e la sua storia: tocca una parte per seminare o trapiantare. Quello che è stato coltivato qui prima di dividere conta per la rotazione di tutte le parti.</p>
+    </section>
+    ${storici.length ? `<section class="carta"><h3 style="margin-top:0">Prima della divisione</h3>${htmlStorici}</section>` : ""}
+    ${eventi.length ? `<section class="carta"><h3 style="margin-top:0">Ultime annotazioni</h3>${htmlEventi(eventi)}</section>` : ""}
+    <div class="riga-bottoni">
+      <button class="secondario" id="evento-qui">＋ Annotazione</button>
+      <button class="secondario" id="modifica-aiuola">✏️ Modifica aiuola</button>
+      <button class="secondario" id="elimina-aiuola">Elimina aiuola</button>
+    </div>`;
+  const padre = padreDi(a);
   return `
-    <p><a href="#orto">← Tutte le aiuole</a></p>
+    <p>${padre ? `<a href="#orto/${padre.id}">← ${esc(nomeAiuola(padre))} (tutte le parti)</a>` : `<a href="#orto">← Tutte le aiuole</a>`}</p>
     <h2>${iconaAiuola(a)} ${esc(nomeAiuola(a))}</h2>
     ${misureAiuola(a) || tipoAiuola(a) ? `<p class="tenue">${esc([misureAiuola(a), tipoAiuola(a)].filter(Boolean).join(" · "))}</p>` : ""}
     ${a.note ? `<p>${esc(a.note)}</p>` : ""}
@@ -2213,8 +2417,9 @@ function vistaAiuola(a) {
     ${a.semenzaio ? "" : `<section class="carta"><h3 style="margin-top:0">Negli anni passati</h3>${htmlTerraCambiata(a)}${htmlStorici}</section>`}
     ${eventi.length ? `<section class="carta"><h3 style="margin-top:0">Ultime annotazioni</h3>${htmlEventi(eventi)}</section>` : ""}
     <div class="riga-bottoni">
-      <button class="secondario" id="modifica-aiuola">✏️ Modifica ${a.semenzaio ? "semenzaio" : "aiuola"}</button>
-      ${a.semenzaio ? "" : `<button class="secondario" id="elimina-aiuola">Elimina aiuola</button>`}
+      <button class="secondario" id="modifica-aiuola">✏️ Modifica ${a.semenzaio ? "semenzaio" : padre ? "parte" : "aiuola"}</button>
+      ${a.semenzaio || padre || a.vaso ? "" : `<button class="secondario" id="dividi">✂️ Dividi in parti</button>`}
+      ${a.semenzaio ? "" : `<button class="secondario" id="elimina-aiuola">Elimina ${padre ? "parte" : "aiuola"}</button>`}
     </div>`;
 }
 
@@ -2813,15 +3018,20 @@ function collega(root) {
     su("#piantine-comprate", () => moduloAcquisto());
     su("[data-cella-nuova]", (b) => moduloImpianto({ aiuolaId: a.id, celle: [b.dataset.cellaNuova] }));
     su("#evento-qui", () => moduloEvento({ tipo: "lavoro", aiuolaId: a.id }));
-    su("#modifica-aiuola", () => moduloAiuola(a));
+    su("#modifica-aiuola", () => padreDi(a) ? moduloParte(a, padreDi(a)) : moduloAiuola(a));
+    su("#dividi", () => moduloDividi(a));
+    su("#nuova-parte", () => moduloParte(null, a));
     su("#elimina-aiuola", () => {
-      const n = S.impianti.filter((i) => i.aiuolaId === a.id).length;
-      if (!confirm(`Eliminare l'aiuola «${nomeAiuola(a)}»${n ? ` e tutta la sua storia (${n} colture)` : ""}?`)) return;
-      S.aiuole = S.aiuole.filter((x) => x.id !== a.id);
-      S.impianti = S.impianti.filter((i) => i.aiuolaId !== a.id);
-      S.eventi = S.eventi.filter((e) => e.aiuolaId !== a.id);
+      // Aiuola divisa: se ne vanno anche le sue parti.
+      const via = new Set([a.id, ...partiDi(a).map((b) => b.id)]);
+      const n = S.impianti.filter((i) => via.has(i.aiuolaId)).length;
+      const padre = padreDi(a);
+      if (!confirm(`Eliminare ${padre ? "la parte" : "l'aiuola"} «${nomeAiuola(a)}»${via.size > 1 ? ` con le sue ${via.size - 1} parti` : ""}${n ? ` e tutta la sua storia (${n} colture)` : ""}?`)) return;
+      S.aiuole = S.aiuole.filter((x) => !via.has(x.id));
+      S.impianti = S.impianti.filter((i) => !via.has(i.aiuolaId));
+      S.eventi = S.eventi.filter((e) => !via.has(e.aiuolaId));
       salva();
-      location.hash = "#orto";
+      location.hash = padre ? `#orto/${padre.id}` : "#orto";
     });
   }
 
