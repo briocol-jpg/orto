@@ -716,6 +716,17 @@ function occupazione(aiuolaId, escludiId) {
 }
 
 // Scacchiera cliccabile nei moduli: scrive le caselle scelte nel campo nascosto "celle".
+// Chi occupa le caselle il giorno dataISO: colture già messe (o in programma
+// prima di quel giorno) che non saranno ancora finite (fineImpianto, in piano.js).
+function occupazioneAl(aiuolaId, dataISO, escludiId) {
+  if (!dataISO || dataISO <= aISO(oggi())) return occupazione(aiuolaId, escludiId);
+  const d = daISO(dataISO), mappa = {};
+  for (const i of impiantiAttivi(aiuolaId)) {
+    if (i.id === escludiId || i.data > dataISO || fineImpianto(i) < d) continue;
+    for (const c of i.celle || []) (mappa[c] ??= []).push(i);
+  }
+  return mappa;
+}
 function aggiornaSceltaCelle(form, aiuolaId, escludiId) {
   const contenitore = form.querySelector("#w_celle");
   const a = aiuola(aiuolaId);
@@ -729,7 +740,8 @@ function aggiornaSceltaCelle(form, aiuolaId, escludiId) {
   const scelte = new Set(celleValide(a, form.elements.celle.value.split(",").filter(Boolean)));
   const manca = celleMancanti(a);
   form.elements.celle.value = [...scelte].join(",");
-  const occ = occupazione(aiuolaId, escludiId);
+  const dataISO = form.elements.data?.value || "";
+  const occ = occupazioneAl(aiuolaId, dataISO, escludiId), adesso = occupazione(aiuolaId, escludiId);
   const rett = form.dataset.rettangolo === "1", angolo = form.dataset.angolo || "";
   let h = `<div class="comandi-celle">
     <div class="campo-check"><input type="checkbox" id="m_rett" ${rett ? "checked" : ""}><label for="m_rett" style="margin:0">Rettangolo: tocca due angoli</label></div>
@@ -778,9 +790,14 @@ function aggiornaSceltaCelle(form, aiuolaId, escludiId) {
   }
   const sovrapposte = ordinaCelle([...scelte].filter((n) => occ[n]));
   const nomi = [...new Set(sovrapposte.flatMap((n) => occ[n].map((i) => PER_ID[i.ortaggioId]?.nome.toLowerCase() ?? "")))];
-  return sovrapposte.length
-    ? `<div class="avviso">Caselle già occupate: ${esc(testoListaCelle(sovrapposte))} (${nomi.map(esc).join(", ")}).</div>`
+  // Caselle occupate adesso ma libere per quella data: la coltura di prima si chiude quando la raccogli.
+  const prima = [...new Set([...scelte].filter((n) => !occ[n] && adesso[n]).flatMap((n) => adesso[n]))];
+  const liberano = prima.length
+    ? `<div class="bene piccolo">🔄 Adesso qui ${prima.length > 1 ? "ci sono" : "c'è"} ${prima.map((i) => `${esc(PER_ID[i.ortaggioId]?.nome.toLowerCase() ?? "")} (raccolta fino a circa ${fmtAnno(fineImpianto(i))})`).join(", ")}: per quella data il posto sarà libero. Va bene così: quando ${prima.length > 1 ? "le raccogli, segnale" : "la raccogli, segnala"} come finita.</div>`
     : "";
+  return (sovrapposte.length
+    ? `<div class="avviso">Caselle già occupate${dataISO > aISO(oggi()) ? " in quella data" : ""}: ${esc(testoListaCelle(sovrapposte))} (${nomi.map(esc).join(", ")}).</div>`
+    : "") + liberano;
 }
 function campoCelle(valore) {
   return { id: "celle", etichetta: "Caselle dell'aiuola (tocca per scegliere; nessuna = tutta l'aiuola)", tipo: "celle", valore: (valore || []).join(","), nascosto: true };
@@ -2248,7 +2265,7 @@ function vistaCalendario() {
 let annoPianta = null;
 function coltureAnno(aiuolaId, anno) {
   return S.impianti.filter((i) => i.aiuolaId === aiuolaId && i.modo !== "acq" && PER_ID[i.ortaggioId]
-    && (i.data.startsWith(anno) || (i.data < anno && (!i.finito || (i.dataFine || "") >= anno))));
+    && (i.data.startsWith(anno) || (i.data < anno && (i.finito ? (i.dataFine || "") >= anno : fineImpianto(i) >= new Date(Number(anno), 0, 1)))));
 }
 function anniPianta() {
   const anni = new Set([String(oggi().getFullYear()), String(oggi().getFullYear() + 1)]);
@@ -2286,7 +2303,7 @@ function vistaOrto(idAiuola) {
       </select>
     </div>
     ${bottoni}
-    ${annoPianta ? `<p class="tenue piccolo">🗓️ Le colture del <b>${annoPianta}</b>${annoPianta > String(oggi().getFullYear()) ? " (in programma: aggiungile con ＋ Nuova coltura con una data futura, o accetta il piano della stagione nuova)" : ""}. Con le scacchiere cambiate le caselle sono riportate su quella di oggi.</p>` : ""}
+    ${annoPianta ? `<p class="tenue piccolo">🗓️ Le colture del <b>${annoPianta}</b>${annoPianta > String(oggi().getFullYear()) ? " (in programma: aggiungile con ＋ Nuova coltura con una data futura, o accetta il piano della stagione nuova)" : ""}. Le aiuole che hanno cambiato scacchiera si vedono com'erano quell'anno.</p>` : ""}
     ${htmlPianta(scelta)}
     ${S.aiuole.length <= 1 && !IN_PROVA ? htmlInvitoProva() : ""}
     ${S.aiuole.length <= 1 ? `<p class="tenue">Crea un'aiuola per ogni pezzo dell'orto: l'app ricorda cosa ci hai coltivato ogni anno e ti avvisa se ripeti la stessa famiglia (rotazione) o metti vicini ortaggi che non vanno d'accordo.</p>` : ""}
@@ -2307,10 +2324,27 @@ function htmlPianta(soloZona, perScelta = false) {
   // Colture da disegnare: adesso, o quelle dell'anno scelto (annoPianta).
   const anno = perScelta ? null : annoPianta;
   const coltureDi = (id) => anno ? coltureAnno(id, anno) : impiantiAttivi(id);
+  // Scacchiera da disegnare: quella dell'anno scelto (se le colture di quell'anno
+  // avevano una scacchiera diversa da oggi, i.griglia), altrimenti quella di oggi.
+  const grigliaVista = (a) => {
+    const v = anno && coltureDi(a.id).find((i) => i.griglia && i.data.startsWith(anno));
+    return v ? { g: v.griglia, manca: new Set(v.grigliaManca || []) } : { g: grigliaAiuola(a), manca: celleMancanti(a) };
+  };
   const occupazioneDi = (a) => {
     if (!anno) return occupazione(a.id);
-    const m = {};
-    for (const i of coltureDi(a.id)) for (const c of celleSuAiuola(i, a)) (m[c] ??= []).push(i);
+    const m = {}, gv = grigliaVista(a).g;
+    for (const i of coltureDi(a.id)) {
+      if (!i.celle?.length) continue;
+      const gi = grigliaDi(i, a);
+      for (const c of stessaGriglia(gi, gv) ? i.celle : riportaCelle(i.celle, gi, gv)) (m[c] ??= []).push(i);
+    }
+    // Colture che si sono succedute nella stessa casella (cetrioli, poi finocchi):
+    // si vede l'ultima messa, con quelle che c'erano ancora quando è stata messa.
+    const fine = (i) => i.finito ? daISO(i.dataFine || i.data) : fineImpianto(i);
+    for (const c of Object.keys(m)) {
+      const l = m[c].sort((x, y) => y.data.localeCompare(x.data)), ultima = l[0];
+      m[c] = l.filter((i) => i === ultima || fine(i) >= daISO(ultima.data));
+    }
     return m;
   };
   const blocchi = zone().filter((z) => !soloZona || z === soloZona).map((zona) => {
@@ -2415,13 +2449,14 @@ function htmlPianta(soloZona, perScelta = false) {
         const posti = perRiga * righe;
         const emoji = tutte.length > posti ? [...tutte.slice(0, Math.max(0, posti - 1)), `+${tutte.length - Math.max(0, posti - 1)}`] : tutte;
         const cx = x + w / 2;
-        const griglia = haGriglia(a) && !a.capanno;
+        const vista = grigliaVista(a);
+        const griglia = !a.capanno && !a.semenzaio && vista.g.righe * vista.g.colonne > 1;
         let testi = "", linee = "";
         if (griglia) {
           // Scacchiera: linee e, in ogni casella, l'emoji di chi la occupa.
-          const g = grigliaAiuola(a);
+          const g = vista.g;
           const cw = w / g.colonne, ch = h / g.righe;
-          const manca = celleMancanti(a);
+          const manca = vista.manca;
           // Caselle che sono vasi: un cerchio per casella, ogni fila centrata.
           const vasi = formaVasiCaselle(a);
           const colonneFila = (r) => [...Array(g.colonne).keys()].filter((c) => !manca.has(nomeCella(r, c)));
