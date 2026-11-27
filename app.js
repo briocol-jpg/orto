@@ -1844,7 +1844,7 @@ function vistaOggi() {
         </span></div></li>`).join("")}</ul>
     </section>` : "";
 
-  return `${htmlProgramma}
+  return `${htmlPromemoriaCopia()}${htmlProgramma}
     ${htmlInvitoPiano(false)}
     <section class="carta">
       <h2 style="margin-top:0">${MESI_LUNGHI[ora.getMonth()][0].toUpperCase() + MESI_LUNGHI[ora.getMonth()].slice(1)}: lavori del mese</h2>
@@ -2539,6 +2539,8 @@ function vistaLuogo() {
         <button class="secondario" id="importa">📂 Ripristina da file</button>
         <input type="file" id="file-importa" accept="application/json,text/plain,.json,.txt" hidden>
       </div>
+      <p class="tenue piccolo">🕘 Ogni volta che apri l'app, se l'orto è cambiato, ne tengo anche una copia automatica sul telefono (le ultime ${MAX_COPIE}): ti salva se cancelli qualcosa per sbaglio.</p>
+      <div class="riga-bottoni"><button class="secondario" id="copie-automatiche">🕘 Copie automatiche</button></div>
       <p class="tenue piccolo">Promemoria: scarica un file di calendario (.ics) con le attività segnate nel diario con una data futura (con un avviso una settimana prima), i trapianti e le raccolte previsti e l'inizio delle semine dei tuoi ortaggi ★ per i prossimi 12 mesi. Aprilo con l'app Calendario o importalo in Google Calendar dal computer.</p>
       <div class="riga-bottoni"><button class="secondario" id="ics">📅 Scarica promemoria (.ics)</button></div>
     </section>
@@ -2814,6 +2816,80 @@ function modificaDateBrinate() {
   });
 }
 
+// --- Copie automatiche ----------------------------------------------------------
+// A ogni apertura dell'app (non nell'orto didattico), se l'orto è cambiato dall'ultima
+// copia, ne tengo una in IndexedDB (database «orto-copie», una lista per ogni orto =
+// CHIAVE), le ultime MAX_COPIE. Servono contro gli errori (cancellato per sbaglio,
+// piano accettato male); se si perde il telefono spariscono: per quello c'è «Invia copia».
+const DB_COPIE = "orto-copie", MAX_COPIE = 20;
+function apriDbCopie() {
+  return new Promise((ok, ko) => {
+    const r = indexedDB.open(DB_COPIE, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("copie", { keyPath: "id", autoIncrement: true }).createIndex("chiave", "chiave");
+    r.onsuccess = () => ok(r.result);
+    r.onerror = () => ko(r.error);
+  });
+}
+async function copieAutomatiche() {
+  if (!window.indexedDB) return [];
+  const db = await apriDbCopie();
+  return new Promise((ok, ko) => {
+    const q = db.transaction("copie").objectStore("copie").index("chiave").getAll(CHIAVE);
+    q.onsuccess = () => ok(q.result.sort((x, y) => y.id - x.id));
+    q.onerror = () => ko(q.error);
+  });
+}
+async function copiaAutomatica() {
+  if (IN_PROVA || !window.indexedDB) return;
+  if (S.aiuole.filter((a) => !a.semenzaio).length === 0 && !S.impianti.length) return; // orto ancora vuoto
+  try {
+    const testo = JSON.stringify(S);
+    const copie = await copieAutomatiche();
+    if (copie[0]?.testo === testo) return; // niente di nuovo dall'ultima copia
+    const db = await apriDbCopie();
+    const tx = db.transaction("copie", "readwrite"), st = tx.objectStore("copie");
+    st.add({ chiave: CHIAVE, quando: new Date().toISOString(), testo, riassunto: contaOrto(S) });
+    for (const c of copie.slice(MAX_COPIE - 1)) st.delete(c.id);
+    await new Promise((ok, ko) => { tx.oncomplete = ok; tx.onerror = () => ko(tx.error); });
+  } catch (e) {
+    console.warn("copia automatica", e);
+  }
+}
+async function finestraCopieAutomatiche() {
+  const copie = await copieAutomatiche().catch(() => []);
+  const ora = (iso) => { const d = new Date(iso); return `${fmtLungo(d)} ${d.getFullYear()}, ore ${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`; };
+  apriFinestra(`<h2>🕘 Copie automatiche</h2>
+    <p class="tenue piccolo">Ogni volta che apri l'app, se l'orto è cambiato, l'app ne tiene una copia qui sul telefono (le ultime ${MAX_COPIE}). Servono se cancelli o cambi qualcosa per sbaglio. Se perdi o cambi telefono spariscono anche loro: per quello c'è «📤 Invia copia».</p>
+    ${copie.length ? `<ul class="elenco">${copie.map((c, k) => `<li><div class="riga" style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+      <span><b>${ora(c.quando)}</b>${k === 0 ? " <span class=\"chip\">la più recente</span>" : ""}<br><span class="tenue piccolo">${esc(c.riassunto || "")}</span></span>
+      <span style="white-space:nowrap"><button class="piccolo" data-ripristina-copia="${c.id}">↩️ Ripristina</button>
+      <button class="piccolo secondario" data-scarica-copia="${c.id}" title="Scarica il file">💾</button></span></div></li>`).join("")}</ul>`
+      : `<p>Ancora nessuna copia: la prima arriva la prossima volta che apri l'app.</p>`}
+    <div class="riga-bottoni"><button class="secondario" data-chiudi>Chiudi</button></div>`, (f) => {
+    f.querySelectorAll("[data-scarica-copia]").forEach((b) => b.addEventListener("click", () => {
+      const c = copie.find((x) => x.id === Number(b.dataset.scaricaCopia));
+      if (c) scaricaFile(`orto-copia-${c.quando.slice(0, 10)}.json`, JSON.stringify(JSON.parse(c.testo), null, 1), "application/json");
+    }));
+    f.querySelectorAll("[data-ripristina-copia]").forEach((b) => b.addEventListener("click", async () => {
+      const c = copie.find((x) => x.id === Number(b.dataset.ripristinaCopia));
+      if (!c || !confirm(`Tornare all'orto com'era il ${ora(c.quando)} (${c.riassunto})?\nQuello di adesso resta tra le copie automatiche.`)) return;
+      await copiaAutomatica(); // prima tengo da parte l'orto di adesso
+      localStorage.setItem(CHIAVE, c.testo);
+      S = carica();
+      chiudiFinestra();
+      disegna();
+      alert("Orto ripristinato.");
+    }));
+  });
+}
+// Promemoria in Oggi: nessuna copia mandata fuori dal telefono da più di 30 giorni.
+function htmlPromemoriaCopia() {
+  if (IN_PROVA || S.impianti.length < 3) return "";
+  const u = S.impostazioni.ultimaCopia;
+  if (u && giorniTra(daISO(u), oggi()) < 30) return "";
+  return `<div class="avviso">💾 ${u ? `L'ultima copia dell'orto mandata fuori dal telefono è del ${fmtLungo(daISO(u))}` : "Non hai ancora mandato una copia dell'orto fuori dal telefono"}: se il telefono si rompe i dati si perdono. In 📍 Luogo tocca <b>📤 Invia copia</b> e mandala a te stesso.</div>`;
+}
+
 // --- Copia di sicurezza e promemoria -----------------------------------------
 function esportaDati() {
   S.impostazioni.ultimaCopia = aISO(oggi());
@@ -3043,6 +3119,7 @@ function collega(root) {
   su("#date-brinate", modificaDateBrinate);
   su("#invia", inviaCopia);
   su("#esporta", esportaDati);
+  su("#copie-automatiche", finestraCopieAutomatiche);
   su("#importa", () => el("file-importa").click());
   el("file-importa")?.addEventListener("change", (e) => { if (e.target.files[0]) importaDati(e.target.files[0]); });
   su("#ics", esportaIcs);
@@ -3072,4 +3149,5 @@ if ("serviceWorker" in navigator && location.protocol !== "file:") {
 navigator.storage?.persist?.();
 
 // Primo disegno quando sono caricati tutti i file (prova.js e riconosci.js vengono dopo).
-document.addEventListener("DOMContentLoaded", () => disegna());
+// Poi la copia automatica dell'orto (se è cambiato dall'ultima).
+document.addEventListener("DOMContentLoaded", () => { disegna(); setTimeout(copiaAutomatica, 1500); });
