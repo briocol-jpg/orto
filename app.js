@@ -314,7 +314,7 @@ function corridoioZona(zona) {
   return c == null ? CORRIDOIO : c;
 }
 function tipoAiuola(a) {
-  if (a.capanno) return `${a.copertura === "serra" ? "serra usata come capanno degli attrezzi" : "capanno degli attrezzi"}${a.porta && a.copertura === "serra" ? `, porta ${PORTE[a.porta].split(" (")[0].toLowerCase()}` : ""}, non si coltiva`;
+  if (a.capanno) return `${a.copertura === "serra" ? "serra usata come capanno degli attrezzi" : "capanno degli attrezzi"}${PORTE[a.porta] && a.porta ? `, porta ${PORTE[a.porta].split(" (")[0].toLowerCase()}` : ""}, non si coltiva`;
   return [a.copertura === "serra" && a.porta ? `porta ${PORTE[a.porta].split(" (")[0].toLowerCase()}` : "", a.copertura === "serra" ? "in serra" : "", a.giroSerra ? "🔁 giro delle serre spostabili" : "", a.pacciamatura ? PACCIAMATURE[a.pacciamatura].toLowerCase() : ""].filter(Boolean).join(" · ");
 }
 function zone() {
@@ -880,7 +880,7 @@ function moduloAiuola(a) {
       { id: "inizio", etichetta: "Distanza dal bordo sinistro dell'orto, in metri (facoltativo)", tipo: "number", passo: "0.05", valore: a?.inizio },
       { id: "copertura", etichetta: "All'aperto o in serra", tipo: "select", opzioni: Object.entries(COPERTURE), valore: a?.copertura ?? "" },
       { id: "giroSerra", etichetta: "🔁 Serra spostabile: questa aiuola è uno dei posti dove sposti le serre da un anno all'altro (anche se adesso è all'aperto)", tipo: "check", valore: !!a?.giroSerra },
-      { id: "porta", etichetta: "🚪 Porta della serra: da che lato si entra", tipo: "select", opzioni: Object.entries(PORTE), valore: a?.porta ?? "" },
+      { id: "porta", etichetta: "🚪 Porta (serra o capanno): da che lato si entra", tipo: "select", opzioni: Object.entries(PORTE), valore: a?.porta ?? "" },
       { id: "pacciamatura", etichetta: "Pacciamatura", tipo: "select", opzioni: Object.entries(PACCIAMATURE), valore: a?.pacciamatura ?? "" },
       { id: "fissa", etichetta: "Sempre lo stesso ortaggio, ogni anno (non si ruota: es. zucca che sale sul tetto)", tipo: "select",
         opzioni: [["", "— no, si ruota —"], ...elencoOrtaggi().map((o) => [o.id, `${o.emoji} ${o.nome}`])], valore: a?.fissa ?? "" },
@@ -915,7 +915,7 @@ function moduloAiuola(a) {
       form.querySelector("#w_fissa").hidden = capanno;
       campiMisureVaso(form, v.cosa, false);
       const wp = form.querySelector("#w_porta");
-      if (wp) wp.hidden = !(v.copertura === "serra" || (!capanno && v.giroSerra));
+      if (wp) wp.hidden = !(capanno || v.copertura === "serra" || v.giroSerra);
       const doppia = S.aiuole.find((x) => x !== a && !x.semenzaio && (x.zona || ZONA_PREDEFINITA) === v.zona && String(x.numero) === v.numero);
       form.querySelector("#w_faiPosto").hidden = !doppia;
       if (!doppia) return "";
@@ -1999,7 +1999,7 @@ function htmlPianta(soloZona, perScelta = false) {
         ${a.vaso === "tondo" ? `<circle class="p-aiuola p-vaso${misurata ? "" : " p-senza"}" cx="${T(cx, y + h / 2)[0]}" cy="${T(cx, y + h / 2)[1]}" r="${w / 2}"/>`
           : `<polygon class="p-aiuola${misurata ? "" : " p-senza"}${a.capanno ? " p-capanno" : ""}${a.vaso ? " p-vaso" : ""}${formaVasiCaselle(a) && haGriglia(a) ? " p-base-vasi" : ""}${a.pacciamatura ? " p-" + a.pacciamatura : ""}" points="${punti(angoli(x, y, w, h))}"/>`}
         ${a.copertura === "serra" ? `<polygon class="p-serra" points="${punti(angoli(x + d, y + d, Math.max(0, w - 2 * d), Math.max(0, h - 2 * d)))}"/>` : ""}
-        ${a.copertura === "serra" && PORTE[a.porta] && a.porta ? (() => {
+        ${(a.copertura === "serra" || a.capanno) && PORTE[a.porta] && a.porta ? (() => {
           // Porta: un tratto marrone a metà del lato da cui si entra.
           const lp = Math.min(0.8, (a.porta === "sinistra" || a.porta === "destra" ? h : w) * 0.4);
           const [p1, p2] = {
@@ -2099,7 +2099,7 @@ function legendaPianta(lista) {
   if (lista.some((a) => a.pacciamatura === "telo")) voci.push(`<span><i class="l-telo"></i>telo</span>`);
   if (lista.some((a) => a.pacciamatura === "organica")) voci.push(`<span><i class="l-organica"></i>paglia, foglie</span>`);
   if (lista.some((a) => a.copertura === "serra")) voci.push(`<span><i class="l-serra"></i>🏠 serra</span>`);
-  if (lista.some((a) => a.copertura === "serra" && a.porta)) voci.push(`<span><i class="l-porta"></i>porta</span>`);
+  if (lista.some((a) => (a.copertura === "serra" || a.capanno) && a.porta)) voci.push(`<span><i class="l-porta"></i>porta</span>`);
   if (lista.some((a) => a.capanno)) voci.push(`<span><i class="l-capanno"></i>🧰 attrezzi</span>`);
   if (lista.some((a) => a.vaso || formaVasiCaselle(a))) voci.push(`<span><i class="l-vaso"></i>🏺 vaso</span>`);
   return voci.length > 1 || lista.some((a) => a.copertura === "serra" || a.pacciamatura || a.capanno || a.vaso) ? `<div class="legenda">${voci.join("")}</div>` : "";
@@ -2857,7 +2857,7 @@ if ("serviceWorker" in navigator && location.protocol !== "file:") {
     b.addEventListener("click", () => location.reload());
     document.body.appendChild(b);
   });
-  navigator.serviceWorker.register("sw.js").catch((e) => console.warn("service worker", e));
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).catch((e) => console.warn("service worker", e));
 }
 navigator.storage?.persist?.();
 

@@ -24,7 +24,7 @@ const GUIDA = [
     "Una serra? In ✏️ Modifica aiuola scegli <b>In serra o tunnel</b> 🏠 e il lato della <b>🚪 Porta</b>: sulla mappa è il tratto marrone.",
     "Sposti le serre da un anno all'altro? Spunta <b>🔁 Serra spostabile</b> in tutte le aiuole dove possono andare, anche in quelle all'aperto.",
     "Vasi sparsi in giardino (peperoncini, basilico)? Tocca <b>＋ Nuova aiuola</b> e in <b>Che cos'è</b> scegli 🏺 <b>vaso tondo</b> (scrivi il diametro), <b>vaso quadrato</b> (scrivi il lato) o <b>vaso rettangolare</b>. Mettili tutti nella zona «Vasi». Tanti vasi uguali? <b>＋ Più aiuole insieme</b> e in <b>Che cosa</b> scegli i vasi.",
-    "Il capanno degli attrezzi? Tocca <b>＋ Nuova aiuola</b> e in <b>Che cos'è</b> scegli 🧰 <b>capanno</b>: si vede sulla mappa ma non si coltiva. Se è una serra usata per gli attrezzi, scegli anche <b>In serra o tunnel</b> e la porta.",
+    "Il capanno degli attrezzi? Tocca <b>＋ Nuova aiuola</b> e in <b>Che cos'è</b> scegli 🧰 <b>capanno</b>: si vede sulla mappa ma non si coltiva. Scegli il lato della <b>🚪 Porta</b>: sulla mappa è il tratto marrone. Se è una serra usata per gli attrezzi, scegli anche <b>In serra o tunnel</b>.",
   ] },
   { ico: "🔢", titolo: "Cambiare i numeri delle aiuole", righe: [
     "Dai un numero già usato e lascia la spunta <b>Fai posto</b>: le altre aiuole si spostano di uno.",
@@ -74,7 +74,7 @@ const GUIDA = [
     "I dati stanno solo su questo telefono.",
     "Ogni tanto, in 📍 Luogo, tocca <b>📤 Invia copia</b> e mandala a te stesso (WhatsApp o email).",
     "Telefono nuovo? <b>📂 Ripristina da file</b> e scegli la copia.",
-    "Compare <b>🔄 C'è una versione nuova</b>? Toccalo: l'app si aggiorna.",
+    "Compare <b>🔄 C'è una versione nuova</b>? Toccalo: l'app si aggiorna. Il numero della versione è in fondo a questa pagina ❓.",
   ] },
   { ico: "👥", titolo: "Più persone, più orti", righe: [
     "Vuoi far vedere il tuo orto a un vicino? Tocca <b>📤 Invia copia</b> in 📍 Luogo e mandagliela su WhatsApp.",
@@ -93,5 +93,6 @@ function vistaAiuto() {
       <summary><span class="guida-ico">${g.ico}</span> ${g.titolo}</summary>
       <ol>${g.righe.map((r) => `<li>${r}</li>`).join("")}</ol>
     </details>`).join("")}
-    <p class="tenue piccolo">Ti sei perso? Tocca 🌱 Orto in basso e riparti da lì. Niente si rompe: quasi tutto si può correggere con ✏️.</p>`;
+    <p class="tenue piccolo">Ti sei perso? Tocca 🌱 Orto in basso e riparti da lì. Niente si rompe: quasi tutto si può correggere con ✏️.</p>
+    <p class="tenue piccolo" style="text-align:center">Il mio orto · versione ${VERSIONE_APP} del ${fmtLungo(daISO(DATA_VERSIONE))}</p>`;
 }
