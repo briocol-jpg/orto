@@ -8,7 +8,7 @@
 const GUIDA = [
   { ico: "🧭", titolo: "Le 5 schede in basso", righe: [
     "☀️ <b>Oggi</b>: cosa fare adesso, il meteo e le cose in programma.",
-    "📅 <b>Calendario</b>: quando seminare, trapiantare e raccogliere ogni ortaggio.",
+    "📅 <b>Calendario</b>: quando seminare, trapiantare e raccogliere ogni ortaggio. In alto c'è la <b>🤝 Tabella dei buoni e cattivi vicini</b>.",
     "🌱 <b>Orto</b>: le tue aiuole e cosa c'è dentro.",
     "📓 <b>Diario</b>: tutto quello che hai fatto, anno per anno.",
     "📍 <b>Luogo</b>: dov'è l'orto, il clima e la copia dei dati.",
@@ -39,12 +39,14 @@ const GUIDA = [
     "Semi in casa o in vasetti? Mettili nel 🪴 <b>Semenzaio</b> con <b>＋ Nuova semina</b>. Quando sono grandi tocca <b>Trapianta</b> e tocca l'aiuola sulla <b>🗺️ mappa</b>: vedi cosa c'è già dentro, quella scelta diventa gialla.",
     "Piantine comprate al vivaio? Nel 🪴 Semenzaio tocca <b>🛒 Piantine comprate</b>: vasetti, piantine per vasetto, prezzo, marca, negozio. Poi <b>Trapianta</b>. Nel 📓 Diario vedi quante ne hai comprate e quanto hai speso.",
     "Ne trapianti solo una parte? In «Quante piantine trapianti» scrivi il numero: le altre restano nel semenzaio, e le trapianti dopo, anche in un'altra aiuola.",
+    "Pomodori, cavoli, zucchine e gli altri ortaggi a file larghe lasciano spazio libero per un mese o due: l'app ti propone 🌱 <b>Sfrutta lo spazio</b> con colture veloci (lattughino, ravanelli, rucola, basilico…) da mettere tra le file. Nella pagina dell'aiuola tocca <b>＋</b> accanto a quella che vuoi.",
     "⚠️ in rosso = vicini che non vanno d'accordo. 🔄 = la stessa famiglia c'era da poco. 🤝 = buoni vicini.",
   ] },
   { ico: "🧺", titolo: "Raccogliere e scrivere nel diario", righe: [
     "Tocca <b>🧺 Raccolto</b> e scrivi quanti kg: a fine anno vedi cosa ha reso di più.",
     "<b>＋ Nota</b> o <b>＋ Annotazione</b> per annaffiature, concime, trattamenti.",
     "Una data futura diventa un promemoria 🔔 che vedi in ☀️ Oggi.",
+    "Hai agrumi in vaso? In autunno, in ☀️ Oggi → 🔔 Da fare, l'app ti ricorda di metterli al riparo (e il meteo ti avvisa se la minima scende verso 4 °C); in primavera di riportarli fuori. Tocca <b>✅ Fatto</b> e il promemoria sparisce.",
     "Hai cambiato la terra di un'aiuola (o l'hai scambiata con un'altra) per lasciare le piante dove sono? <b>＋ Annotazione</b> → <b>🪣 Terra cambiata</b> e scegli l'aiuola: da quel giorno l'app non conta più le colture di prima per la rotazione.",
     "Piante avvizzite o marce per colpa della terra (fusto marrone dentro, base marcia, palline sulle radici)? <b>＋ Annotazione</b> → <b>🦠 Malattia del terreno</b>, scegli l'aiuola, la malattia (o «Non so») e la famiglia: per 3–5 anni l'app ti avvisa in rosso se ci rimetti quella famiglia, e il piano dell'anno nuovo la tiene lontana.",
     "Quando la pianta è finita tocca <b>Fine coltura</b>: resta nella storia dell'aiuola.",

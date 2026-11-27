@@ -388,6 +388,21 @@ function elencoOrtaggi() {
 function amiciDi(id) {
   return AMICI.filter((p) => p.includes(id)).map((p) => (p[0] === id ? p[1] : p[0]));
 }
+// Colture intercalari adatte alla data: niente cattivi vicini, e solo quelle che
+// si possono seminare o trapiantare nei giorni in cui c'è ancora spazio.
+function intercalari(ortaggioId, dataISO) {
+  const x = INTERCALARI[ortaggioId];
+  if (!x) return null;
+  const da = daISO(dataISO || aISO(oggi())), a = piuGiorni(da, Math.min(x.giorni, 60));
+  const nemici = nemiciDi(ortaggioId);
+  const ok = x.tra.filter((id) => PER_ID[id] && !nemici.includes(id) && ["dir", "tra"].some((f) => finestreTra(PER_ID[id], f, da, a).length));
+  return { ...x, ok };
+}
+function testoIntercalari(ortaggioId, dataISO) {
+  const x = intercalari(ortaggioId, dataISO), o = PER_ID[ortaggioId];
+  if (!x?.ok.length) return "";
+  return `🌱 <b>Sfrutta lo spazio</b>: finché ${esc(o.nome.toLowerCase())} è piccolo (circa ${x.giorni} giorni), ${esc(x.dove)} puoi mettere colture veloci: <b>${x.ok.map((id) => esc(PER_ID[id].nome.split(" (")[0].toLowerCase())).join(", ")}</b>. Tienile a 25–30 cm dal piede e raccoglile prima che faccia ombra.`;
+}
 function nemiciDi(id) {
   return NEMICI.filter((p) => p.includes(id)).map((p) => (p[0] === id ? p[1] : p[0]));
 }
@@ -1327,7 +1342,8 @@ function moduloImpianto({ aiuolaId, ortaggioId, impianto, celle } = {}) {
       const avvisoCelle = aggiornaSceltaCelle(form, v2.aiuolaId, i?.id);
       const celleScelte = form.elements.celle.value.split(",").filter(Boolean);
       return aggiornaNuovaAiuola(v2, form) + avvisoCelle + proposta + htmlAvvisi(v2.aiuolaId, v2.ortaggioId, v2.data, i?.id, celleScelte, protezione)
-        + (CONSIGLI_PROTEZIONE[protezione] ? `<div class="bene piccolo">${CONSIGLI_PROTEZIONE[protezione]}</div>` : "");
+        + (CONSIGLI_PROTEZIONE[protezione] ? `<div class="bene piccolo">${CONSIGLI_PROTEZIONE[protezione]}</div>` : "")
+        + (v2.ortaggioId && !aiuola(v2.aiuolaId)?.semenzaio && testoIntercalari(v2.ortaggioId, v2.data) ? `<div class="bene piccolo">${testoIntercalari(v2.ortaggioId, v2.data)}</div>` : "");
     },
     salva: (v) => {
       v.aiuolaId = aiuolaDaModulo(v);
@@ -1446,7 +1462,8 @@ function moduloTrapianto(i) {
         : rimaste != null && n > rimaste ? `<div class="avviso">Nel semenzaio ce ne sono solo ${rimaste}.</div>` : "";
       return aggiornaNuovaAiuola(v, form) + avvisoCelle + resto
         + htmlAvvisi(v.aiuolaId, i.ortaggioId, v.data, null, form.elements.celle.value.split(",").filter(Boolean), v.protezione)
-        + (CONSIGLI_PROTEZIONE[v.protezione] ? `<div class="bene piccolo">${CONSIGLI_PROTEZIONE[v.protezione]}</div>` : "");
+        + (CONSIGLI_PROTEZIONE[v.protezione] ? `<div class="bene piccolo">${CONSIGLI_PROTEZIONE[v.protezione]}</div>` : "")
+        + (testoIntercalari(i.ortaggioId, v.data) ? `<div class="bene piccolo">${testoIntercalari(i.ortaggioId, v.data)}</div>` : "");
     },
     salva: (v) => {
       if (!v.aiuolaId) return false;
@@ -1679,6 +1696,7 @@ function schedaOrtaggio(id) {
     <p>${esc(o.note)}</p>
     ${amici.length ? `<p><b>Buoni vicini:</b> ${esc(amici.join(", "))}</p>` : ""}
     ${nemici.length ? `<p><b>Da tenere lontano:</b> ${esc(nemici.join(", "))}</p>` : ""}
+    ${INTERCALARI[id] ? `<p><b>🌱 Colture veloci da mettere ${esc(INTERCALARI[id].dove)}</b> (nei primi ${INTERCALARI[id].giorni} giorni, finché è piccolo): ${esc(INTERCALARI[id].tra.map((x) => PER_ID[x].nome.split(" (")[0].toLowerCase()).join(", "))}.</p>` : ""}
     <p class="tenue piccolo">Date calcolate per il tuo luogo (ultima brinata ${fmtMmdd(S.impostazioni.ultimaBrinata)}, prima brinata ${fmtMmdd(S.impostazioni.primaBrinata)}).</p>
     <div class="riga-bottoni">
       <button id="aggiungi">＋ Aggiungi all'orto</button>
@@ -1727,6 +1745,10 @@ function htmlMeteo(m) {
   // Colture sotto una miniserra in PVC trasparente: col sole vanno arieggiate.
   const sottoTelo = [...new Set(S.impianti.filter((i) => !i.finito && i.protezione === "tunnelTelo" && coltivabile(aiuola(i.aiuolaId)))
     .map((i) => PER_ID[i.ortaggioId]?.nome.toLowerCase()).filter(Boolean))];
+  // Agrumi in vaso non ancora al riparo (o già riportati fuori): avviso col freddo.
+  const sa = agrumiNellOrto().length ? statoAgrumi() : null;
+  const agrumiFuori = Boolean(sa && (!sa.riparo || sa.uscita));
+  let avvisoAgrumi = false;
   let celle = "";
   const avvisi = [];
   let pioggia = 0;
@@ -1737,6 +1759,10 @@ function htmlMeteo(m) {
     pioggia += mm;
     const freddo = min <= SOGLIA_BRINATA;
     if (freddo) avvisi.push(`<div class="pericolo">🥶 ${k === 0 ? "Oggi" : GIORNI[d.getDay()] + " " + d.getDate()}: minima ${Math.round(min)} °C, rischio brinata. Copri le piantine con il tessuto non tessuto.</div>`);
+    if (agrumiFuori && min <= 4 && !avvisoAgrumi) {
+      avvisoAgrumi = true;
+      avvisi.push(`<div class="pericolo">🍋 ${k === 0 ? "Oggi" : GIORNI[d.getDay()] + " " + d.getDate()}: minima ${Math.round(min)} °C. Metti al riparo gli agrumi in vaso o coprili con il tessuto non tessuto.</div>`);
+    }
     if (k <= 1 && max >= 13 && sottoTelo.length) avvisi.push(`<div class="avviso">⛺ ${k === 0 ? "Oggi" : "Domani"} massima ${Math.round(max)} °C: nelle ore di sole apri le testate delle miniserre in PVC (${esc(sottoTelo.join(", "))}) e richiudi nel pomeriggio.</div>`);
     if (max >= 32) avvisi.push(`<div class="avviso">🔥 ${GIORNI[d.getDay()]} ${d.getDate()}: massima ${Math.round(max)} °C. Annaffia la sera e ombreggia le insalate.</div>`);
     celle += `<div class="giorno ${freddo ? "freddo" : ""}">
@@ -1759,6 +1785,36 @@ function htmlMeteo(m) {
 // Vista: Oggi
 // -----------------------------------------------------------------------------
 // Attività segnate nel diario con una data da oggi in poi (annotazioni e colture), entro "giorni".
+// Agrumi in vaso (famiglia rutacee) nell'orto: in autunno, da 3 settimane prima
+// della prima brinata, «mettili al riparo» finché non tocchi ✅ Fatto (evento
+// lavoro con agrumi: "riparo"); in primavera, dopo l'ultima brinata, «riportali
+// fuori» (agrumi: "fuori"). Le voci vanno in «Da fare» di Oggi.
+function agrumiNellOrto() {
+  return S.impianti.filter((i) => !i.finito && PER_ID[i.ortaggioId]?.fam === "rutacee" && !aiuola(i.aiuolaId)?.semenzaio);
+}
+function statoAgrumi() {
+  const ora = oggi(), imp = S.impostazioni;
+  const y = ora.getMonth() >= 6 ? ora.getFullYear() : ora.getFullYear() - 1; // inverno che comincia nell'anno y
+  const inizio = piuGiorni(daISO(`${y}-${imp.primaBrinata || BASE_PRIMA_BRINATA}`), -21);
+  const fuori = daISO(`${y + 1}-${imp.ultimaBrinata || "04-20"}`);
+  const ev = (tipo) => S.eventi.filter((e) => e.agrumi === tipo && e.data >= aISO(inizio)).sort((p, q) => q.data.localeCompare(p.data))[0];
+  const riparo = ev("riparo"), uscita = ev("fuori");
+  return { ora, y, inizio, fuori, riparo, uscita };
+}
+function promemoriaAgrumi() {
+  const agrumi = agrumiNellOrto();
+  if (!agrumi.length) return [];
+  const { ora, y, inizio, fuori, riparo, uscita } = statoAgrumi();
+  const nomi = [...new Set(agrumi.map((i) => PER_ID[i.ortaggioId].nome.split(" (")[0].toLowerCase()))].join(", ");
+  const dove = [...new Set(agrumi.map((i) => nomeAiuolaId(i.aiuolaId)))].join(", ");
+  if (!riparo && ora >= inizio && ora <= daISO(`${y + 1}-03-31`)) return [{ data: ora, agrumi: "riparo", ico: "🍋", dove,
+    titolo: `Metti al riparo gli agrumi in vaso (${nomi})`,
+    testo: "Quando di notte si scende sotto i 3–5 °C: in serra fredda, veranda o scale luminose (5–12 °C, non in casa al caldo). Se restano fuori, coprili con il tessuto non tessuto (anche due strati) e avvolgi il vaso. Il limone è il più delicato, il kumquat il più robusto." }];
+  if (riparo && !uscita && ora >= fuori && ora <= daISO(`${y + 1}-06-30`)) return [{ data: ora, agrumi: "fuori", ico: "🍋", dove,
+    titolo: `Riporta fuori gli agrumi (${nomi})`,
+    testo: "Le gelate sono finite: riportali all'aperto, i primi giorni all'ombra, poi al sole. È il momento del rinvaso (ogni 2–3 anni) e del concime per agrumi." }];
+  return [];
+}
 function attivitaInProgramma(giorni) {
   const ora = oggi(), fino = piuGiorni(ora, giorni);
   const voci = [];
@@ -1832,14 +1888,14 @@ function vistaOggi() {
     ? `<p class="tenue">Imposta la posizione dell'orto nella scheda <a href="#luogo">Luogo</a> per vedere le previsioni e il rischio di brinate.</p>`
     : `<div id="box-meteo"><p class="tenue">Carico le previsioni…</p></div>`;
 
-  const programma = attivitaInProgramma(ANTICIPO_PROMEMORIA);
+  const programma = [...promemoriaAgrumi(), ...attivitaInProgramma(ANTICIPO_PROMEMORIA)];
   const htmlProgramma = programma.length ? `<section class="carta promemoria">
       <h2 style="margin-top:0">🔔 Da fare nei prossimi ${ANTICIPO_PROMEMORIA} giorni</h2>
       <ul class="elenco">${programma.map((v) => `<li><div class="riga">
         <span><b>${v.ico ? v.ico + " " : ""}${esc(v.titolo)}</b> <span class="tenue">· ${quandoTesto(v.data)}</span>
           ${v.dove || v.testo ? `<br><span class="tenue piccolo">${esc([v.dove, v.testo].filter(Boolean).join(" · "))}</span>` : ""}</span>
         <span style="white-space:nowrap">
-          <button class="piccolo secondario" ${v.tipo === "ev" ? `data-modifica-ev="${v.id}"` : `data-modifica-imp="${v.id}"`}>✏️</button>
+          ${v.agrumi ? `<button class="piccolo" data-agrumi="${v.agrumi}">✅ Fatto</button>` : `<button class="piccolo secondario" ${v.tipo === "ev" ? `data-modifica-ev="${v.id}"` : `data-modifica-imp="${v.id}"`}>✏️</button>`}
           <a class="bottone secondario piccolo" style="min-height:34px;padding:4px 10px" target="_blank" rel="noopener" href="${esc(linkGoogleCalendar(v.titolo, v.data, [v.dove, v.testo].filter(Boolean).join(" · ")))}" title="Aggiungi al calendario">📅</a>
         </span></div></li>`).join("")}</ul>
     </section>` : "";
@@ -1885,6 +1941,28 @@ function dopoOggi() {
 // -----------------------------------------------------------------------------
 // Vista: Calendario
 // -----------------------------------------------------------------------------
+// Tabella dei vicini: per ogni ortaggio del calendario i buoni e i cattivi vicini
+// (AMICI e NEMICI in data.js, consociazioni della tradizione). Sul telefono ogni
+// riga diventa una scheda; il campo in alto filtra le righe.
+function vistaVicini() {
+  const nomi = (l) => l.map((x) => PER_ID[x]).filter(Boolean).sort((p, q) => p.nome.localeCompare(q.nome, "it"))
+    .map((o) => `<span class="chip">${icona(o)} ${esc(o.nome)}</span>`).join(" ") || `<span class="tenue">—</span>`;
+  const righe = [...ORTAGGI].sort((p, q) => p.nome.localeCompare(q.nome, "it")).map((o) => {
+    const amici = amiciDi(o.id), nemici = nemiciDi(o.id);
+    const cerca = [o.nome, ...amici, ...nemici].map((x) => (PER_ID[x]?.nome ?? x).toLowerCase()).join(" ");
+    return `<tr data-cerca="${esc(cerca)}">
+      <td data-titolo="Ortaggio"><button class="voce-storico" data-ortaggio="${o.id}"><b>${icona(o)} ${esc(o.nome)}</b></button></td>
+      <td data-titolo="🤝 Buoni vicini">${nomi(amici)}</td>
+      <td data-titolo="⚠️ Cattivi vicini">${nomi(nemici)}</td></tr>`;
+  }).join("");
+  return `<p><a href="#calendario">← Calendario</a></p>
+    <h2>🤝 Buoni e cattivi vicini</h2>
+    <p class="tenue piccolo">Le consociazioni della tradizione degli orticoltori: quali ortaggi stanno bene vicini (si aiutano contro parassiti e malattie, o usano il terreno in modo diverso) e quali è meglio tenere lontani. Sono consigli, non regole: molte coppie vengono dall'esperienza più che dagli studi. L'app li usa negli avvisi ⚠️ e 🤝 quando semini e nel piano dell'anno nuovo. Tocca un ortaggio per la sua scheda.</p>
+    <input type="search" id="cerca-vicini" placeholder="🔎 Cerca un ortaggio (es. pomodoro)" style="width:100%;margin:6px 0 10px">
+    <table class="vicini"><thead><tr><th>Ortaggio</th><th>🤝 Buoni vicini</th><th>⚠️ Cattivi vicini</th></tr></thead><tbody>${righe}</tbody></table>
+    <p class="tenue piccolo">Gli agrumi, l'alloro e la canapa non hanno consociazioni note; il lattughino ha gli stessi vicini della lattuga.</p>`;
+}
+
 function vistaCalendario() {
   const ora = oggi();
   const anno = ora.getFullYear();
@@ -1912,6 +1990,7 @@ function vistaCalendario() {
   return `
     <h2>Calendario ${anno}</h2>
     <p class="tenue piccolo">Calcolato per il tuo luogo: ultima brinata ${fmtMmdd(S.impostazioni.ultimaBrinata)}, prima brinata ${fmtMmdd(S.impostazioni.primaBrinata)}. Tocca un ortaggio per la scheda.</p>
+    <p><a class="chip" href="#vicini">🤝 Tabella dei buoni e cattivi vicini</a></p>
     <div class="legenda">
       <span><i style="background:var(--f-sem)"></i>Semenzaio</span>
       <span><i style="background:var(--f-dir)"></i>Semina a terra</span>
@@ -2358,6 +2437,15 @@ function vistaAiuola(a) {
       ${a.semenzaio && Number(i.trapiantate) > 0 ? `<div class="bene piccolo">🚜 Trapiantate ${i.trapiantate}${piantineRimaste(i) != null ? `, nel semenzaio ne restano <b>${piantineRimaste(i)}</b>` : ""}.</div>` : ""}
       ${i.note ? `<div class="piccolo">${esc(i.note)}</div>` : ""}
       ${avv}
+      ${(() => {
+        // Coltura a sesto largo messa da poco: proposta delle intercalari, con un bottone per ognuna.
+        const x = !a.semenzaio && intercalari(i.ortaggioId, aISO(oggi()) > i.data ? aISO(oggi()) : i.data);
+        const eta = giorniTra(daISO(i.data), oggi());
+        const gia = new Set(impiantiAttivi(a.id).map((y) => y.ortaggioId));
+        const ok = x ? x.ok.filter((id) => !gia.has(id)) : [];
+        return x && eta < x.giorni && ok.length ? `<div class="bene piccolo">🌱 <b>Sfrutta lo spazio</b> ${esc(x.dove)} finché ${esc(o.nome.toLowerCase())} è piccolo:
+          ${ok.map((id) => `<button class="chip" data-intercalare="${id}" data-intercalare-di="${i.id}">＋ ${icona(PER_ID[id])} ${esc(PER_ID[id].nome)}</button>`).join(" ")}</div>` : "";
+      })()}
       <div class="riga-bottoni">
         ${a.semenzaio ? `<button class="piccolo" data-trapianta="${i.id}">Trapianta</button>` : `<button class="piccolo" data-raccolto="${i.id}">🧺 Raccolto</button>`}
         <button class="piccolo secondario" data-evento-imp="${i.id}">＋ Nota</button>
@@ -3027,7 +3115,7 @@ function esportaIcs() {
 function rotta() {
   const h = location.hash.replace(/^#/, "") || "oggi";
   const [vista, param] = h.split("/");
-  return { vista: ["oggi", "calendario", "orto", "diario", "luogo", "piano", "aiuto", "missioni", "medaglie"].includes(vista) ? vista : "oggi", param };
+  return { vista: ["oggi", "calendario", "orto", "diario", "luogo", "piano", "aiuto", "missioni", "medaglie", "vicini"].includes(vista) ? vista : "oggi", param };
 }
 
 // Se la finestra cambia molto di larghezza (PC, telefono girato), ridisegno la pianta.
@@ -3047,10 +3135,10 @@ function disegna() {
   const imp = S.impostazioni;
   el("sottotitolo").textContent = (!IN_PROVA && profili().length > 1 ? `👤 ${nomeProfilo(profiloAttivo())} · ` : "")
     + (imp.luogo ? `${imp.luogo}${imp.altitudine != null ? ` · ${Math.round(imp.altitudine)} m` : ""}` : fmtLungo(oggi()));
-  document.querySelectorAll(".schede a").forEach((a) => a.classList.toggle("attiva", a.dataset.vista === (vista === "piano" ? "orto" : vista === "medaglie" ? "diario" : vista)));
+  document.querySelectorAll(".schede a").forEach((a) => a.classList.toggle("attiva", a.dataset.vista === (vista === "piano" ? "orto" : vista === "medaglie" ? "diario" : vista === "vicini" ? "calendario" : vista)));
 
   document.body.dataset.vista = vista; // sul PC la scheda Orto è più larga (vedi style.css)
-  const viste = { oggi: vistaOggi, calendario: vistaCalendario, orto: () => vistaOrto(param), diario: vistaDiario, luogo: vistaLuogo, piano: vistaPiano, aiuto: vistaAiuto, missioni: () => vistaMissioni(), medaglie: () => vistaMedaglie() };
+  const viste = { oggi: vistaOggi, calendario: vistaCalendario, orto: () => vistaOrto(param), diario: vistaDiario, luogo: vistaLuogo, piano: vistaPiano, aiuto: vistaAiuto, missioni: () => vistaMissioni(), medaglie: () => vistaMedaglie(), vicini: vistaVicini };
   const scroll = window.scrollY;
   app.innerHTML = viste[vista]();
   if (disegna.ultima === location.hash) window.scrollTo(0, scroll);
@@ -3068,6 +3156,16 @@ function collega(root) {
   const su = (sel, fn) => root.querySelectorAll(sel).forEach((b) => b.addEventListener("click", (e) => { e.preventDefault(); fn(b, e); }));
   const imp = (id) => S.impianti.find((i) => i.id === id);
   su("[data-ortaggio]", (b) => schedaOrtaggio(b.dataset.ortaggio));
+  su("[data-agrumi]", (b) => {
+    const riparo = b.dataset.agrumi === "riparo";
+    S.eventi.push({ id: nuovoId(), tipo: "lavoro", data: aISO(oggi()), aiuolaId: "", impiantoId: "", kg: null, agrumi: b.dataset.agrumi,
+      testo: riparo ? "Agrumi in vaso messi al riparo per l'inverno" : "Agrumi in vaso riportati fuori" });
+    salva_e_ridisegna();
+  });
+  el("cerca-vicini")?.addEventListener("input", (e) => {
+    const t = e.target.value.trim().toLowerCase();
+    document.querySelectorAll("table.vicini tbody tr").forEach((tr) => { tr.hidden = Boolean(t) && !tr.dataset.cerca.includes(t); });
+  });
   su("[data-trapianta]", (b) => moduloTrapianto(imp(b.dataset.trapianta)));
   su("[data-raccolto]", (b) => moduloEvento({ tipo: "raccolto", impiantoId: b.dataset.raccolto, aiuolaId: imp(b.dataset.raccolto)?.aiuolaId }));
   su("[data-evento-imp]", (b) => moduloEvento({ tipo: "nota", impiantoId: b.dataset.eventoImp, aiuolaId: imp(b.dataset.eventoImp)?.aiuolaId }));
@@ -3091,6 +3189,7 @@ function collega(root) {
   const a = param && aiuola(param);
   if (a) {
     su("#coltura-qui", () => moduloImpianto({ aiuolaId: a.id }));
+    su("[data-intercalare]", (b) => moduloImpianto({ aiuolaId: a.id, ortaggioId: b.dataset.intercalare, celle: S.impianti.find((x) => x.id === b.dataset.intercalareDi)?.celle }));
     su("#piantine-comprate", () => moduloAcquisto());
     su("[data-cella-nuova]", (b) => moduloImpianto({ aiuolaId: a.id, celle: [b.dataset.cellaNuova] }));
     su("#evento-qui", () => moduloEvento({ tipo: "lavoro", aiuolaId: a.id }));

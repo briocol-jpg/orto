@@ -195,6 +195,17 @@ button:disabled { opacity: 0.5; }
 .meteo .min.freddo { color: var(--pericolo); font-weight: 600; }
 
 /* Calendario */
+/* Tabella dei buoni e cattivi vicini; sul telefono ogni riga è una scheda */
+table.vicini { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+table.vicini th { text-align: left; padding: 6px; border-bottom: 2px solid var(--linea); }
+table.vicini td { padding: 6px; border-bottom: 1px solid var(--linea); vertical-align: top; }
+table.vicini .chip { margin: 2px 0; }
+@media (max-width: 640px) {
+  table.vicini thead { display: none; }
+  table.vicini tr { display: block; padding: 8px 0; border-bottom: 1px solid var(--linea); }
+  table.vicini td { display: block; border: 0; padding: 2px 0; }
+  table.vicini td:not(:first-child)::before { content: attr(data-titolo) ": "; font-size: 0.85em; color: var(--tenue); }
+}
 .legenda { display: flex; flex-wrap: wrap; gap: 12px; font-size: 0.85rem; margin: 6px 0 10px; }
 .legenda i { display: inline-block; width: 14px; height: 6px; border-radius: 3px; margin-right: 4px; vertical-align: middle; }
 .cal { width: 100%; }

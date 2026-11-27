@@ -330,6 +330,11 @@ const AMICI = [
   ["aneto", "cetriolo"], ["aneto", "lattuga"], ["aneto", "verza"], ["aneto", "cipolla"],
   ["dragoncello", "melanzana"], ["dragoncello", "peperone"],
   ["lavanda", "zucchino"], ["lavanda", "cetriolo"], ["lavanda", "verza"],
+  // Aggiunte del controllo del 2026-11-27: gli stessi vicini per tutti i cavoli, e rucola e carciofo.
+  ["fagiolino", "cavolfiore"], ["fagiolino", "cavolonero"],
+  ["rosmarino", "cavolfiore"], ["salvia", "cavolfiore"], ["menta", "cavolfiore"],
+  ["rucola", "lattuga"], ["rucola", "carota"], ["rucola", "bietola"],
+  ["carciofo", "fava"], ["carciofo", "lattuga"],
 ];
 
 const NEMICI = [
@@ -352,7 +357,32 @@ const NEMICI = [
   ["erbacipollina", "fagiolo"], ["erbacipollina", "fagiolino"], ["erbacipollina", "pisello"],
   ["aneto", "carota"], ["aneto", "finocchio"],
   ["coriandolo", "finocchio"],
+  ["aglio", "cavolfiore"],
 ];
+// Colture intercalari: per gli ortaggi a sesto largo, cosa mettere tra le file (o
+// tra le piante) finché sono piccoli. giorni = quanto dura lo spazio libero prima
+// che la coltura grande faccia ombra; dove = dove si mettono. Ortaggi veloci e bassi,
+// mai della stessa famiglia dei cavoli tra i cavoli (stessi parassiti).
+const INTERCALARI = {
+  pomodoro: { giorni: 45, dove: "tra le file", tra: ["lattughino", "lattuga", "ravanello", "rucola", "basilico", "prezzemolo"] },
+  peperone: { giorni: 40, dove: "tra le file", tra: ["lattughino", "ravanello", "rucola", "basilico"] },
+  peperoncino: { giorni: 40, dove: "tra le file", tra: ["lattughino", "ravanello", "rucola", "basilico"] },
+  melanzana: { giorni: 40, dove: "tra le file", tra: ["lattughino", "ravanello", "rucola", "basilico"] },
+  zucchino: { giorni: 30, dove: "tra una pianta e l'altra", tra: ["lattughino", "ravanello", "lattuga"] },
+  zucca: { giorni: 40, dove: "tra una pianta e l'altra", tra: ["lattughino", "ravanello", "lattuga"] },
+  cetriolo: { giorni: 30, dove: "ai piedi della rete", tra: ["lattughino", "ravanello", "lattuga", "aneto"] },
+  melone: { giorni: 35, dove: "tra una pianta e l'altra", tra: ["lattughino", "ravanello", "lattuga"] },
+  verza: { giorni: 40, dove: "tra le file", tra: ["lattughino", "lattuga", "spinacio"] },
+  cavolfiore: { giorni: 40, dove: "tra le file", tra: ["lattughino", "lattuga", "spinacio"] },
+  cavolonero: { giorni: 40, dove: "tra le file", tra: ["lattughino", "lattuga", "spinacio"] },
+  mais: { giorni: 40, dove: "tra le file", tra: ["lattughino", "lattuga", "ravanello"] },
+  patata: { giorni: 30, dove: "tra le file, prima della rincalzatura", tra: ["lattughino", "ravanello", "spinacio"] },
+  fava: { giorni: 40, dove: "tra le file", tra: ["lattughino", "ravanello", "spinacio"] },
+  finocchio: { giorni: 30, dove: "tra le file", tra: ["lattughino", "ravanello", "rucola"] },
+  fagiolo: { giorni: 30, dove: "tra le file", tra: ["lattughino", "ravanello", "lattuga"] },
+  carciofo: { giorni: 120, dove: "tra le piante, nei primi mesi", tra: ["lattuga", "lattughino", "fava"] },
+};
+
 // Il lattughino ha gli stessi vicini della lattuga.
 for (const L of [AMICI, NEMICI]) L.push(...L.filter((p) => p.includes("lattuga")).map((p) => p.map((x) => (x === "lattuga" ? "lattughino" : x))));
 
