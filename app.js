@@ -1696,6 +1696,7 @@ function schedaOrtaggio(id) {
     <p>${esc(o.note)}</p>
     ${amici.length ? `<p><b>Buoni vicini:</b> ${esc(amici.join(", "))}</p>` : ""}
     ${nemici.length ? `<p><b>Da tenere lontano:</b> ${esc(nemici.join(", "))}</p>` : ""}
+    ${!PERENNI.has(id) && o.fam !== "rutacee" ? `<p><b>🔄 Dopo, nella stessa aiuola:</b> ${esc(dopoDi(id).ideali.map((x) => x.nome.split(" (")[0].toLowerCase()).join(", "))}. Non ${esc(FAMIGLIE[o.fam].split(" (")[0].toLowerCase())} per ${ANNI_ROTAZIONE} anni. <a href="#dopo">Tabella</a></p>` : ""}
     ${INTERCALARI[id] ? `<p><b>🌱 Colture veloci da mettere ${esc(INTERCALARI[id].dove)}</b> (nei primi ${INTERCALARI[id].giorni} giorni, finché è piccolo): ${esc(INTERCALARI[id].tra.map((x) => PER_ID[x].nome.split(" (")[0].toLowerCase()).join(", "))}.</p>` : ""}
     <p class="tenue piccolo">Date calcolate per il tuo luogo (ultima brinata ${fmtMmdd(S.impostazioni.ultimaBrinata)}, prima brinata ${fmtMmdd(S.impostazioni.primaBrinata)}).</p>
     <div class="riga-bottoni">
@@ -1963,6 +1964,60 @@ function vistaVicini() {
     <p class="tenue piccolo">Gli agrumi, l'alloro e la canapa non hanno consociazioni note; il lattughino ha gli stessi vicini della lattuga.</p>`;
 }
 
+// Cosa mettere dopo (rotazione): stesse regole del piano (piano.js, punteggio):
+// niente stessa famiglia per ANNI_ROTAZIONE anni; dopo un ortaggio esigente uno
+// che chiede poco o una leguminosa; dopo le leguminose gli esigenti.
+// DOPO_EVITA: famiglie diverse che hanno le stesse malattie del terreno.
+const DOPO_EVITA = [
+  { a: "fam:solanacee", b: "fragola", perche: "verticillosi" },
+];
+function inDopo(x, o) { return x.startsWith("fam:") ? o.fam === x.slice(4) : o.id === x; }
+function dopoDi(id) {
+  const o = PER_ID[id];
+  const annuali = ORTAGGI.filter((x) => x.id !== id && !PERENNI.has(x.id) && x.fam !== "rutacee" && x.id !== "canapa");
+  const malattia = (x) => DOPO_EVITA.find((r) => (inDopo(r.a, o) && inDopo(r.b, x)) || (inDopo(r.b, o) && inDopo(r.a, x)));
+  const nellAiuola = (x) => !["rutacee", "lauracee"].includes(x.fam) && (!PERENNI.has(x.id) || ["fragola", "asparago", "carciofo"].includes(x.id));
+  const evita = ORTAGGI.filter((x) => x.id !== id && nellAiuola(x) && (x.fam === o.fam || malattia(x)));
+  const ok = (x) => x.fam !== o.fam && !malattia(x);
+  let ideali, perche;
+  if (o.fam === "leguminose") {
+    ideali = annuali.filter((x) => ok(x) && x.esig === "alta");
+    perche = "Lascia il terreno ricco di azoto: ideale per un ortaggio esigente.";
+  } else if (o.esig === "alta") {
+    ideali = annuali.filter((x) => ok(x) && (x.esig === "bassa" || x.fam === "leguminose"));
+    perche = "Ha consumato molto: ora un ortaggio che chiede poco o una leguminosa, che arricchisce il terreno.";
+  } else if (o.esig === "media") {
+    ideali = annuali.filter((x) => ok(x) && (x.fam === "leguminose" || x.esig === "media"));
+    perche = "Ha consumato il giusto: una leguminosa o un ortaggio di esigenza media; per uno esigente concima.";
+  } else {
+    ideali = annuali.filter((x) => ok(x) && x.esig === "alta");
+    perche = "Ha consumato poco: il terreno è pronto per un ortaggio esigente (con compost o letame maturo).";
+  }
+  return { ideali, evita, perche, malattia, nellAiuola };
+}
+
+function vistaDopo() {
+  const chip = (x) => `<span class="chip">${icona(x)} ${esc(x.nome)}</span>`;
+  const nomi = (l) => [...l].sort((p, q) => p.nome.localeCompare(q.nome, "it")).map(chip).join(" ") || `<span class="tenue">—</span>`;
+  const elenco = ORTAGGI.filter((o) => dopoDi(o.id).nellAiuola(o));
+  const righe = [...elenco].sort((p, q) => p.nome.localeCompare(q.nome, "it")).map((o) => {
+    const { ideali, evita, perche, malattia } = dopoDi(o.id);
+    const conMal = evita.filter((x) => malattia(x));
+    const cerca = [o.nome, ...ideali.map((x) => x.nome), ...evita.map((x) => x.nome)].join(" ").toLowerCase();
+    return `<tr data-cerca="${esc(cerca)}">
+      <td data-titolo="Prima"><button class="voce-storico" data-ortaggio="${o.id}"><b>${icona(o)} ${esc(o.nome)}</b></button>
+        <div class="tenue piccolo">${esc(FAMIGLIE[o.fam])}${PERENNI.has(o.id) ? " · perenne: vale per quando la togli" : ""}</div></td>
+      <td data-titolo="🌱 Ideali dopo"><div class="piccolo tenue">${esc(perche)}</div>${nomi(ideali)}</td>
+      <td data-titolo="⚠️ Da evitare per ${ANNI_ROTAZIONE} anni">${nomi(evita)}${conMal.length ? `<div class="piccolo tenue">${esc(conMal.map((x) => x.nome).join(", "))}: hanno la stessa malattia del terreno (${esc(malattia(conMal[0]).perche)}).</div>` : ""}</td></tr>`;
+  }).join("");
+  return `<p><a href="#calendario">← Calendario</a> · <a href="#vicini">🤝 Buoni e cattivi vicini</a></p>
+    <h2>🔄 Cosa mettere dopo</h2>
+    <p class="tenue piccolo">La rotazione: cosa mettere in un'aiuola la stagione o l'anno dopo, al posto di quello che c'era. Non è la stessa cosa dei buoni vicini (che crescono insieme, nello stesso momento). Due regole: <b>mai la stessa famiglia per ${ANNI_ROTAZIONE} anni</b> (ha gli stessi parassiti e le stesse malattie, che restano nel terreno), e <b>alternare</b> chi consuma molto con chi consuma poco o arricchisce il terreno (fagioli, piselli, fave). L'app usa queste regole negli avvisi 🔄 quando semini e nel piano dell'anno nuovo. Se in un'aiuola hai cambiato la terra (🪣) si riparte da zero.</p>
+    <input type="search" id="cerca-dopo" placeholder="🔎 Cerca un ortaggio (es. pomodoro)" style="width:100%;margin:6px 0 10px">
+    <table class="vicini"><thead><tr><th>Prima c'era</th><th>🌱 Ideali dopo</th><th>⚠️ Da evitare per ${ANNI_ROTAZIONE} anni</th></tr></thead><tbody>${righe}</tbody></table>
+    <p class="tenue piccolo">Mancano gli agrumi, l'alloro e le aromatiche perenni, che restano anni nello stesso posto. Nella stessa stagione vale lo stesso: dopo l'aglio raccolto a giugno vanno bene cavoli, finocchi o insalate, non porri o cipolle.</p>`;
+}
+
 function vistaCalendario() {
   const ora = oggi();
   const anno = ora.getFullYear();
@@ -1990,7 +2045,7 @@ function vistaCalendario() {
   return `
     <h2>Calendario ${anno}</h2>
     <p class="tenue piccolo">Calcolato per il tuo luogo: ultima brinata ${fmtMmdd(S.impostazioni.ultimaBrinata)}, prima brinata ${fmtMmdd(S.impostazioni.primaBrinata)}. Tocca un ortaggio per la scheda.</p>
-    <p><a class="chip" href="#vicini">🤝 Tabella dei buoni e cattivi vicini</a></p>
+    <p><a class="chip" href="#vicini">🤝 Tabella dei buoni e cattivi vicini</a> <a class="chip" href="#dopo">🔄 Cosa mettere dopo</a></p>
     <div class="legenda">
       <span><i style="background:var(--f-sem)"></i>Semenzaio</span>
       <span><i style="background:var(--f-dir)"></i>Semina a terra</span>
@@ -2558,7 +2613,7 @@ function vistaDiario() {
       data: i.data,
       html: `<li><div class="riga"><span><b>${i.modo === "acq" ? "🛒" : "🌱"} ${esc(MODI[i.modo] ?? "")}</b> · ${nomeOrtaggio(i.ortaggioId)}${i.varieta ? ` (${esc(i.varieta)})` : ""}
         ${daISO(i.data) > oggi() ? ` <span class="chip-futuro">🔔 in programma</span>` : ""}
-        <br><span class="tenue piccolo">${fmt(daISO(i.data))} · ${esc(nomeAiuolaId(i.aiuolaId))}${i.finito ? " · finita" : ""}</span></span>
+        <br><span class="tenue piccolo">${fmt(daISO(i.data))} ${i.data.slice(0, 4)} · ${esc(nomeAiuolaId(i.aiuolaId))}${i.finito ? " · finita" : ""}</span></span>
         <button class="piccolo secondario" data-modifica-imp="${i.id}">✏️ Modifica</button></div></li>`,
     })),
   ].sort((a, b) => b.data.localeCompare(a.data));
@@ -3115,7 +3170,7 @@ function esportaIcs() {
 function rotta() {
   const h = location.hash.replace(/^#/, "") || "oggi";
   const [vista, param] = h.split("/");
-  return { vista: ["oggi", "calendario", "orto", "diario", "luogo", "piano", "aiuto", "missioni", "medaglie", "vicini"].includes(vista) ? vista : "oggi", param };
+  return { vista: ["oggi", "calendario", "orto", "diario", "luogo", "piano", "aiuto", "missioni", "medaglie", "vicini", "dopo"].includes(vista) ? vista : "oggi", param };
 }
 
 // Se la finestra cambia molto di larghezza (PC, telefono girato), ridisegno la pianta.
@@ -3135,10 +3190,10 @@ function disegna() {
   const imp = S.impostazioni;
   el("sottotitolo").textContent = (!IN_PROVA && profili().length > 1 ? `👤 ${nomeProfilo(profiloAttivo())} · ` : "")
     + (imp.luogo ? `${imp.luogo}${imp.altitudine != null ? ` · ${Math.round(imp.altitudine)} m` : ""}` : fmtLungo(oggi()));
-  document.querySelectorAll(".schede a").forEach((a) => a.classList.toggle("attiva", a.dataset.vista === (vista === "piano" ? "orto" : vista === "medaglie" ? "diario" : vista === "vicini" ? "calendario" : vista)));
+  document.querySelectorAll(".schede a").forEach((a) => a.classList.toggle("attiva", a.dataset.vista === (vista === "piano" ? "orto" : vista === "medaglie" ? "diario" : ["vicini", "dopo"].includes(vista) ? "calendario" : vista)));
 
   document.body.dataset.vista = vista; // sul PC la scheda Orto è più larga (vedi style.css)
-  const viste = { oggi: vistaOggi, calendario: vistaCalendario, orto: () => vistaOrto(param), diario: vistaDiario, luogo: vistaLuogo, piano: vistaPiano, aiuto: vistaAiuto, missioni: () => vistaMissioni(), medaglie: () => vistaMedaglie(), vicini: vistaVicini };
+  const viste = { oggi: vistaOggi, calendario: vistaCalendario, orto: () => vistaOrto(param), diario: vistaDiario, luogo: vistaLuogo, piano: vistaPiano, aiuto: vistaAiuto, missioni: () => vistaMissioni(), medaglie: () => vistaMedaglie(), vicini: vistaVicini, dopo: vistaDopo };
   const scroll = window.scrollY;
   app.innerHTML = viste[vista]();
   if (disegna.ultima === location.hash) window.scrollTo(0, scroll);
@@ -3162,10 +3217,10 @@ function collega(root) {
       testo: riparo ? "Agrumi in vaso messi al riparo per l'inverno" : "Agrumi in vaso riportati fuori" });
     salva_e_ridisegna();
   });
-  el("cerca-vicini")?.addEventListener("input", (e) => {
+  ["cerca-vicini", "cerca-dopo"].forEach((c) => el(c)?.addEventListener("input", (e) => {
     const t = e.target.value.trim().toLowerCase();
     document.querySelectorAll("table.vicini tbody tr").forEach((tr) => { tr.hidden = Boolean(t) && !tr.dataset.cerca.includes(t); });
-  });
+  }));
   su("[data-trapianta]", (b) => moduloTrapianto(imp(b.dataset.trapianta)));
   su("[data-raccolto]", (b) => moduloEvento({ tipo: "raccolto", impiantoId: b.dataset.raccolto, aiuolaId: imp(b.dataset.raccolto)?.aiuolaId }));
   su("[data-evento-imp]", (b) => moduloEvento({ tipo: "nota", impiantoId: b.dataset.eventoImp, aiuolaId: imp(b.dataset.eventoImp)?.aiuolaId }));
